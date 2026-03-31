@@ -1,0 +1,61 @@
+═══════════════════════════════════════════════════════════
+ KidTube — How to Run
+═══════════════════════════════════════════════════════════
+
+OPTION 1 — Instant demo (no installation needed)
+─────────────────────────────────────────────────
+Just open this file in any browser:
+
+  kidtube.html
+
+That's it. Double-click it. Works offline once loaded.
+Default parent PIN: 1234
+
+
+OPTION 2 — Full React development project
+──────────────────────────────────────────
+The kidtube/ folder is a complete Vite + React + Tailwind project.
+Run these commands from the kidtube/ directory:
+
+  npm install
+  npm run dev
+
+Then open http://localhost:5173 in your browser.
+This version is better for customisation and adding the YouTube API.
+
+
+CONNECTING THE REAL YOUTUBE DATA API
+──────────────────────────────────────────
+1. Go to https://console.cloud.google.com
+2. Create a project → Enable "YouTube Data API v3"
+3. Create an API key (restrict it to your domain)
+4. In src/mockData.js, replace the CHANNELS and VIDEOS arrays
+   with calls to:
+     GET https://www.googleapis.com/youtube/v3/channels
+     GET https://www.googleapis.com/youtube/v3/playlistItems
+   using your API key.
+
+The filtering logic (applyFilters) and all UI components
+stay exactly the same — you're just swapping mock data
+for live API data.
+
+
+FEATURES IN THIS BUILD
+──────────────────────────────────────────
+Kid Mode:
+  ✓ YouTube-like dark interface
+  ✓ Channel grid — only whitelisted channels shown
+  ✓ Video grid per channel
+  ✓ YouTube iframe player (real embeds, no sidebar/comments)
+  ✓ Locked cards for filtered videos with "Ask Parent" button
+  ✓ Shorts completely hidden (not even shown as locked)
+
+Parent Mode (PIN: 1234):
+  ✓ 4-digit PIN lock
+  ✓ Dashboard with stats
+  ✓ Channel whitelist toggle
+  ✓ Filter settings — block Shorts, min duration, keyword block
+  ✓ Watch history grouped by date
+  ✓ Unlock request queue — approve or deny per video
+  ✓ Change parent PIN
+  ✓ All settings persisted in localStorage

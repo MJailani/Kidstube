@@ -1,0 +1,1005 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>KidTube — Safe YouTube for Kids</title>
+  <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { margin:0; background:#0f0f0f; font-family:Arial,sans-serif; color:#f1f1f1; }
+    ::-webkit-scrollbar{width:6px} ::-webkit-scrollbar-track{background:#1a1a1a} ::-webkit-scrollbar-thumb{background:#444;border-radius:3px}
+    .thumb{position:relative;padding-bottom:56.25%;overflow:hidden;background:#272727;border-radius:8px}
+    .thumb img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transition:transform .2s}
+    .thumb:hover img{transform:scale(1.04)}
+    .thumb .dur{position:absolute;bottom:4px;right:4px;background:rgba(0,0,0,.85);color:#fff;font-size:11px;padding:1px 5px;border-radius:3px;font-family:monospace}
+    .clamp1{overflow:hidden;display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical}
+    .clamp2{overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+    @keyframes spin{to{transform:rotate(360deg)}}
+    .spin{animation:spin .8s linear infinite}
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useReducer, useContext, createContext, useRef } = React;
+
+// ── CONFIG ────────────────────────────────────────────────────────────────────
+const API_KEY = 'AIzaSyD7hy8SWw8uIzx0ks986PnyGamm25brpY0';
+
+const CHANNELS = [
+  { id:'UCM1M7IQ6wN83MOyrOQaJeog', name:'Jillian and Addie Laugh', handle:'@JillianandAddieLaugh', subscribers:'2.1M', color:'#E91E63', category:'Family'       },
+  { id:'UCLbyJSPEe2lx3jY-G0CFR3g', name:'Vania Mania Kids',        handle:'@VaniaManiaKids',       subscribers:'15.6M', color:'#9C27B0', category:'Family'      },
+  { id:'UCx790OVgpTC1UVBQIqu3gnQ', name:'Kids Roma Show',           handle:'@KidsRomaShow',         subscribers:'34.8M', color:'#FF5722', category:'Family'      },
+  { id:'UCN5Zf3Zyb9Bp9NeqtNwnc5w', name:'Jillian and Addie',        handle:'@JillianandAddie',      subscribers:'4.3M',  color:'#2196F3', category:'Family'      },
+];
+
+// ── ROUTING ──────────────────────────────────────────────────────────────────
+function useHashRouter() {
+  const get = () => window.location.hash.replace(/^#/,'') || '/';
+  const [path, setPath] = useState(get);
+  useEffect(() => {
+    const h = () => setPath(get());
+    window.addEventListener('hashchange', h);
+    return () => window.removeEventListener('hashchange', h);
+  }, []);
+  return path;
+}
+function navigate(to) { window.location.hash = to; }
+function Link({ to, className, children, ...p }) {
+  return <a href={`#${to}`} className={className} {...p}>{children}</a>;
+}
+
+// ── ICONS ─────────────────────────────────────────────────────────────────────
+function Sv({ d, size=16, cls='' }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={cls}>
+      {[].concat(d).map((p,i) => <path key={i} d={p}/>)}
+    </svg>
+  );
+}
+const IcLeft    = p => <Sv {...p} d={['M19 12H5','M12 5l-7 7 7 7']}/>;
+const IcShield  = p => <Sv {...p} d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>;
+const IcLock    = p => <Sv {...p} d={['M5 11h14v10H5z','M8 11V7a4 4 0 018 0v4']}/>;
+const IcMsg     = p => <Sv {...p} d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/>;
+const IcOk      = p => <Sv {...p} d={['M22 11.08V12a10 10 0 11-5.93-9.14','M22 4L12 14.01l-3-3']}/>;
+const IcX       = p => <Sv {...p} d={['M18 6L6 18','M6 6l12 12']}/>;
+const IcXcirc   = p => <Sv {...p} d={['M18 6L6 18','M6 6l12 12','M12 2a10 10 0 100 20A10 10 0 0012 2z']}/>;
+const IcPlus    = p => <Sv {...p} d={['M12 5v14','M5 12h14']}/>;
+const IcSearch  = p => <Sv {...p} d={['M11 17a6 6 0 100-12 6 6 0 000 12z','M21 21l-4.35-4.35']}/>;
+const IcTrash   = p => <Sv {...p} d={['M3 6h18','M8 6V4h8v2','M19 6l-1 14H6L5 6']}/>;
+const IcClock   = p => <Sv {...p} d={['M12 2a10 10 0 100 20A10 10 0 0012 2z','M12 6v6l4 2']}/>;
+const IcPlay    = p => <Sv {...p} d="M5 3l14 9-14 9V3z"/>;
+const IcLogOut  = p => <Sv {...p} d={['M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4','M16 17l5-5-5-5','M21 12H9']}/>;
+const IcTv      = p => <Sv {...p} d={['M2 7a2 2 0 012-2h16a2 2 0 012 2v10a2 2 0 01-2 2H4a2 2 0 01-2-2V7z','M8 21h8','M12 17v4']}/>;
+const IcKey     = p => <Sv {...p} d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 11-7.778 7.778 5.5 5.5 0 017.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/>;
+const IcGrid    = p => <Sv {...p} d={['M3 3h7v7H3z','M14 3h7v7h-7z','M3 14h7v7H3z','M14 14h7v7h-7z']}/>;
+const IcFilter  = p => <Sv {...p} d="M22 3H2l8 9.46V19l4 2v-8.54L22 3z"/>;
+const IcList    = p => <Sv {...p} d={['M8 6h13','M8 12h13','M8 18h13','M3 6h.01','M3 12h.01','M3 18h.01']}/>;
+const IcRefresh = p => <Sv {...p} d={['M23 4v6h-6','M1 20v-6h6','M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15']}/>;
+
+// ── API HELPERS ───────────────────────────────────────────────────────────────
+function parseDuration(iso) {
+  if (!iso) return 0;
+  const m = iso.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
+  if (!m) return 0;
+  return (parseInt(m[1]||0)*3600) + (parseInt(m[2]||0)*60) + parseInt(m[3]||0);
+}
+function fmtDur(secs) {
+  if (!secs && secs !== 0) return '0:00';
+  const h = Math.floor(secs/3600);
+  const m = Math.floor((secs%3600)/60);
+  const s = secs%60;
+  if (h > 0) return `${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+  return `${m}:${String(s).padStart(2,'0')}`;
+}
+function fmtViews(n) {
+  if (isNaN(n)||n===0) return '0';
+  if (n >= 1e9) return (n/1e9).toFixed(1).replace(/\.0$/,'') + 'B';
+  if (n >= 1e6) return (n/1e6).toFixed(1).replace(/\.0$/,'') + 'M';
+  if (n >= 1e3) return (n/1e3).toFixed(1).replace(/\.0$/,'') + 'K';
+  return String(n);
+}
+async function fetchChannelVideos(channelId, maxResults=30) {
+  const uploadsId = 'UU' + channelId.slice(2);
+  const plUrl = `https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&playlistId=${uploadsId}&maxResults=${maxResults}&key=${API_KEY}`;
+  const plRes = await fetch(plUrl);
+  const plData = await plRes.json();
+  if (plData.error) throw new Error(plData.error.message);
+  if (!plData.items || plData.items.length === 0) return [];
+  const videoIds = plData.items.map(item => item.snippet.resourceId.videoId).join(',');
+  const vidUrl = `https://www.googleapis.com/youtube/v3/videos?part=snippet,contentDetails,statistics&id=${videoIds}&key=${API_KEY}`;
+  const vidRes = await fetch(vidUrl);
+  const vidData = await vidRes.json();
+  if (vidData.error) throw new Error(vidData.error.message);
+  return (vidData.items || []).map(item => {
+    const secs = parseDuration(item.contentDetails.duration);
+    const title = item.snippet.title;
+    const titleLc = title.toLowerCase();
+    const isShort = secs <= 61 || titleLc.includes('#shorts') || titleLc.includes('shorts');
+    const thumb = item.snippet.thumbnails?.medium?.url
+      || item.snippet.thumbnails?.high?.url
+      || item.snippet.thumbnails?.default?.url || '';
+    return {
+      id: item.id,
+      ch: channelId,
+      yt: item.id,
+      title,
+      thumb,
+      dur: fmtDur(secs),
+      secs,
+      views: fmtViews(parseInt(item.statistics?.viewCount || '0')) + ' views',
+      date: (item.snippet.publishedAt||'').split('T')[0],
+      desc: (item.snippet.description||'').slice(0, 300),
+      short: isShort,
+      tags: (item.snippet.tags||[]).slice(0, 5),
+    };
+  });
+}
+
+// ── FILTER ────────────────────────────────────────────────────────────────────
+function filterVideos(videos, filters) {
+  const allowed = [], blocked = [];
+  for (const v of videos) {
+    if (filters.blockShorts && v.short) continue;
+    if (v.secs > 0 && v.secs < filters.minSecs) { blocked.push({...v, why:`Too short (${v.dur})`}); continue; }
+    const hay = (v.title + ' ' + v.desc).toLowerCase();
+    const hit = filters.keywords.find(k => hay.includes(k.toLowerCase()));
+    if (hit) { blocked.push({...v, why:`Keyword: "${hit}"`}); continue; }
+    allowed.push(v);
+  }
+  return { allowed, blocked };
+}
+
+// ── STATE ─────────────────────────────────────────────────────────────────────
+const DFLT = {
+  authed: false,
+  pin: '1234',
+  wl: CHANNELS.map(c => c.id),
+  filters: { blockShorts:true, minSecs:60, keywords:['prank','challenge'] },
+  history: [],
+  requests: [],
+  approved: [],
+  videos: {},
+  loading: {},
+};
+function load() {
+  try {
+    const s = JSON.parse(localStorage.getItem('kt3')||'null');
+    return s ? {...DFLT, ...s, authed:false, videos:{}, loading:{}} : DFLT;
+  } catch { return DFLT; }
+}
+function save(s) {
+  try {
+    const {authed, videos, loading, ...r} = s;
+    localStorage.setItem('kt3', JSON.stringify(r));
+  } catch {}
+}
+function reducer(s, a) {
+  switch(a.t) {
+    case 'LOGIN':      return a.pin===s.pin ? {...s,authed:true} : s;
+    case 'LOGOUT':     return {...s,authed:false};
+    case 'PIN':        return {...s,pin:a.pin};
+    case 'TOGGLE_CH':  { const w=s.wl; return {...s,wl:w.includes(a.id)?w.filter(x=>x!==a.id):[...w,a.id]}; }
+    case 'SET_F':      return {...s,filters:{...s.filters,[a.k]:a.v}};
+    case 'ADD_KW':     { const k=a.kw.trim().toLowerCase(); return (!k||s.filters.keywords.includes(k))?s:{...s,filters:{...s.filters,keywords:[...s.filters.keywords,k]}}; }
+    case 'DEL_KW':     return {...s,filters:{...s.filters,keywords:s.filters.keywords.filter(k=>k!==a.kw)}};
+    case 'LOG':        { const e={...a.e,at:new Date().toISOString()}; return {...s,history:[e,...s.history.filter(x=>x.id!==e.id)].slice(0,200)}; }
+    case 'REQ':        return s.requests.find(r=>r.vid===a.r.vid)?s:{...s,requests:[{...a.r,rid:Date.now()+'',at:new Date().toISOString()},...s.requests]};
+    case 'APPROVE':    { const r=s.requests.find(x=>x.rid===a.rid); return {...s,requests:s.requests.filter(x=>x.rid!==a.rid),approved:r&&!s.approved.includes(r.vid)?[...s.approved,r.vid]:s.approved}; }
+    case 'DENY':       return {...s,requests:s.requests.filter(x=>x.rid!==a.rid)};
+    case 'CLR_HIST':   return {...s,history:[]};
+    case 'VIDS_START': return {...s,loading:{...s.loading,[a.ch]:'loading'}};
+    case 'VIDS_OK':    return {...s,loading:{...s.loading,[a.ch]:'ok'},videos:{...s.videos,[a.ch]:a.videos}};
+    case 'VIDS_ERR':   return {...s,loading:{...s.loading,[a.ch]:'err'}};
+    default:           return s;
+  }
+}
+const Ctx = createContext(null);
+function AppProvider({children}) {
+  const [s, d] = useReducer(reducer, undefined, load);
+  useEffect(() => save(s), [s]);
+
+  // Fetch all channels once on mount
+  useEffect(() => {
+    CHANNELS.forEach(ch => {
+      d({t:'VIDS_START', ch:ch.id});
+      fetchChannelVideos(ch.id)
+        .then(videos => d({t:'VIDS_OK', ch:ch.id, videos}))
+        .catch(err => { console.error('KidTube API error', ch.name, err); d({t:'VIDS_ERR', ch:ch.id}); });
+    });
+  }, []);
+
+  // Re-fetch a channel if it gets enabled but has no data yet
+  useEffect(() => {
+    s.wl.forEach(chId => {
+      if (!s.loading[chId]) {
+        d({t:'VIDS_START', ch:chId});
+        fetchChannelVideos(chId)
+          .then(videos => d({t:'VIDS_OK', ch:chId, videos}))
+          .catch(() => d({t:'VIDS_ERR', ch:chId}));
+      }
+    });
+  }, [s.wl.join(',')]);
+
+  return <Ctx.Provider value={{s,d}}>{children}</Ctx.Provider>;
+}
+function useApp() { return useContext(Ctx); }
+
+// ── SHARED COMPONENTS ─────────────────────────────────────────────────────────
+function Spinner({size=32}) {
+  return (
+    <div style={{width:size,height:size,border:`3px solid #333`,borderTopColor:'#ef4444',borderRadius:'50%'}} className="spin"/>
+  );
+}
+function LoadingGrid({label='Loading videos…'}) {
+  return (
+    <div className="flex flex-col items-center justify-center py-16 gap-4">
+      <Spinner size={36}/>
+      <p className="text-[#aaa] text-sm">{label}</p>
+    </div>
+  );
+}
+function ErrBox({onRetry}) {
+  return (
+    <div className="flex flex-col items-center justify-center py-16 gap-3 text-center px-4">
+      <div className="text-4xl">⚠️</div>
+      <p className="text-white font-semibold">Couldn't load videos</p>
+      <p className="text-[#aaa] text-sm max-w-xs">Check your internet connection or YouTube API quota.</p>
+      {onRetry && <button onClick={onRetry} className="flex items-center gap-2 text-red-400 hover:text-red-300 text-sm mt-1"><IcRefresh size={14}/>Try again</button>}
+    </div>
+  );
+}
+function VCard({v, showCh=true}) {
+  const ch = CHANNELS.find(c => c.id === v.ch);
+  return (
+    <Link to={`/watch/${v.id}`} className="block group">
+      <div className="thumb">
+        <img src={v.thumb} alt={v.title} onError={e => { e.target.onerror=null; e.target.src=`https://i.ytimg.com/vi/${v.yt}/mqdefault.jpg`; }}/>
+        <span className="dur">{v.dur}</span>
+      </div>
+      <div className="flex gap-2 mt-2">
+        {ch && <div className="w-9 h-9 rounded-full flex-shrink-0 flex items-center justify-center text-white text-sm font-bold" style={{background:ch.color,fontSize:14}}>{ch.name[0]}</div>}
+        <div className="flex-1 min-w-0">
+          <p className="text-white text-sm font-medium clamp2 leading-snug">{v.title}</p>
+          {showCh && ch && <p className="text-[#aaa] text-xs mt-0.5">{ch.name}</p>}
+          <p className="text-[#aaa] text-xs">{v.views}</p>
+        </div>
+      </div>
+    </Link>
+  );
+}
+function LockedCard({v, onReq, reqd}) {
+  const ch = CHANNELS.find(c => c.id === v.ch);
+  return (
+    <div>
+      <div className="thumb" style={{opacity:.6}}>
+        <img src={v.thumb} alt={v.title} style={{filter:'blur(3px)',transform:'scale(1.05)'}} onError={e=>{e.target.onerror=null;e.target.src=`https://i.ytimg.com/vi/${v.yt}/mqdefault.jpg`;}}/>
+        <span className="dur">{v.dur}</span>
+        <div className="absolute inset-0 flex flex-col items-center justify-center bg-black bg-opacity-50">
+          <IcLock size={22} cls="text-white mb-1"/><span className="text-white text-xs text-center px-2">{v.why}</span>
+        </div>
+      </div>
+      <div className="flex gap-2 mt-2 items-start">
+        {ch && <div className="w-9 h-9 rounded-full flex-shrink-0 flex items-center justify-center text-white text-sm font-bold" style={{background:ch.color,fontSize:14}}>{ch.name[0]}</div>}
+        <div className="flex-1 min-w-0">
+          <p className="text-[#888] text-sm clamp2">{v.title}</p>
+          <button onClick={() => onReq(v)} disabled={reqd}
+            className={`mt-1.5 flex items-center gap-1 text-xs px-2 py-1 rounded-full ${reqd?'bg-[#272727] text-[#555] cursor-not-allowed':'bg-red-600 hover:bg-red-700 text-white cursor-pointer'}`}>
+            <IcMsg size={11}/>{reqd ? 'Request sent!' : 'Ask Parent to unlock'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── KID HOME ──────────────────────────────────────────────────────────────────
+function KidHome() {
+  const {s, d} = useApp();
+  const wl = CHANNELS.filter(c => s.wl.includes(c.id));
+  const globalLoading = wl.some(ch => s.loading[ch.id] === 'loading');
+  const allLoaded = wl.every(ch => s.loading[ch.id] === 'ok' || s.loading[ch.id] === 'err');
+
+  const recent = wl.flatMap(ch => {
+    const vids = s.videos[ch.id] || [];
+    return filterVideos(vids, s.filters).allowed;
+  }).sort((a,b) => new Date(b.date)-new Date(a.date)).slice(0, 8);
+
+  if (!wl.length) return (
+    <div className="flex flex-col items-center justify-center min-h-[60vh] text-center px-4">
+      <div className="text-6xl mb-4">📺</div>
+      <h2 className="text-xl font-bold mb-2">No channels yet!</h2>
+      <p className="text-[#aaa]">Ask a parent to add some channels.</p>
+    </div>
+  );
+  return (
+    <div className="max-w-6xl mx-auto px-4 py-6">
+      <section className="mb-10">
+        <h2 className="text-lg font-bold mb-4 flex items-center gap-2">
+          <span className="w-1 h-5 bg-red-500 rounded-full inline-block"></span>Your Channels
+          {globalLoading && <Spinner size={16}/>}
+        </h2>
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+          {wl.map(ch => {
+            const vids = s.videos[ch.id] || [];
+            const {allowed} = filterVideos(vids, s.filters);
+            const isLoading = s.loading[ch.id] === 'loading';
+            const hasErr = s.loading[ch.id] === 'err';
+            return (
+              <Link key={ch.id} to={`/channel/${ch.id}`}
+                className="group flex flex-col items-center gap-3 p-3 rounded-2xl hover:bg-[#1f1f1f] transition-colors cursor-pointer">
+                <div className="relative">
+                  <div className="w-20 h-20 rounded-full flex items-center justify-center text-white text-3xl font-bold ring-4 ring-[#272727] group-hover:ring-red-500 transition-all"
+                    style={{background:ch.color}}>{ch.name[0]}</div>
+                  {isLoading && (
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <div style={{width:20,height:20,border:'2px solid rgba(255,255,255,0.3)',borderTopColor:'#fff',borderRadius:'50%'}} className="spin"/>
+                    </div>
+                  )}
+                </div>
+                <div className="text-center">
+                  <p className="text-white text-xs font-medium clamp2 max-w-[120px]">{ch.name}</p>
+                  <p className="text-[#aaa] text-xs mt-0.5">
+                    {isLoading ? 'Loading…' : hasErr ? 'Error' : `${allowed.length} videos`}
+                  </p>
+                  <span className="inline-block mt-1 text-[10px] px-2 py-0.5 rounded-full text-white" style={{background:ch.color}}>{ch.category}</span>
+                </div>
+              </Link>
+            );
+          })}
+        </div>
+      </section>
+      {!allLoaded && recent.length === 0 && <LoadingGrid label="Loading your channels…"/>}
+      {allLoaded && recent.length === 0 && (
+        <div className="text-center py-16 text-[#aaa]">
+          <p className="text-white font-semibold mb-2">No videos available</p>
+          <p className="text-sm">Try adjusting filters in Parent Controls.</p>
+        </div>
+      )}
+      {recent.length > 0 && (
+        <section>
+          <h2 className="text-lg font-bold mb-4 flex items-center gap-2">
+            <span className="w-1 h-5 bg-red-500 rounded-full inline-block"></span>Recent Videos
+          </h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+            {recent.map(v => <VCard key={v.id} v={v}/>)}
+          </div>
+        </section>
+      )}
+    </div>
+  );
+}
+
+// ── CHANNEL PAGE ──────────────────────────────────────────────────────────────
+function ChannelPage({chId}) {
+  const {s, d} = useApp();
+  const ch = CHANNELS.find(c => c.id === chId);
+  if (!ch || !s.wl.includes(chId)) return (
+    <div className="flex flex-col items-center justify-center min-h-[60vh] text-center px-4">
+      <IcLock size={48} cls="text-[#aaa] mb-4"/>
+      <p className="text-white text-lg font-bold mb-2">Channel not available</p>
+      <button onClick={() => navigate('/')} className="text-red-400 flex items-center gap-1 mt-3">
+        <IcLeft size={16}/>Back to home
+      </button>
+    </div>
+  );
+
+  const loadState = s.loading[chId];
+  const isLoading = loadState === 'loading';
+  const hasErr    = loadState === 'err';
+  const all = s.videos[chId] || [];
+  const shorts = all.filter(v => v.short);
+  const {allowed, blocked} = filterVideos(all, s.filters);
+  const appIds = s.approved;
+  const finalAllowed = [...allowed, ...blocked.filter(v => appIds.includes(v.id))];
+  const stillBlocked = blocked.filter(v => !appIds.includes(v.id));
+  const reqIds = s.requests.map(r => r.vid);
+
+  function req(v) { d({t:'REQ', r:{vid:v.id, title:v.title, chName:ch.name, thumb:v.thumb}}); }
+  function retry() {
+    d({t:'VIDS_START', ch:chId});
+    fetchChannelVideos(chId)
+      .then(videos => d({t:'VIDS_OK', ch:chId, videos}))
+      .catch(() => d({t:'VIDS_ERR', ch:chId}));
+  }
+
+  return (
+    <div className="max-w-6xl mx-auto px-4 py-4">
+      <button onClick={() => navigate('/')} className="flex items-center gap-1 text-[#aaa] hover:text-white mb-4 text-sm">
+        <IcLeft size={16}/>All channels
+      </button>
+      <div className="mb-6">
+        <div className="h-28 rounded-2xl mb-3" style={{background:`linear-gradient(135deg,${ch.color}88,${ch.color}22)`}}/>
+        <div className="flex items-end gap-3">
+          <div className="w-14 h-14 rounded-full flex items-center justify-center text-white text-xl font-bold ring-4 ring-[#0f0f0f]" style={{background:ch.color}}>{ch.name[0]}</div>
+          <div>
+            <h1 className="text-xl font-bold">{ch.name}</h1>
+            <p className="text-[#aaa] text-sm">{ch.handle} · {ch.subscribers} subscribers</p>
+            {s.filters.blockShorts && shorts.length > 0 &&
+              <span className="inline-block mt-1 text-xs bg-[#272727] text-[#aaa] px-2 py-0.5 rounded-full">
+                {shorts.length} Shorts hidden
+              </span>}
+          </div>
+        </div>
+      </div>
+      {isLoading && <LoadingGrid label={`Loading ${ch.name} videos…`}/>}
+      {hasErr && !isLoading && <ErrBox onRetry={retry}/>}
+      {!isLoading && !hasErr && (
+        <>
+          {finalAllowed.length > 0 && (
+            <div className="mb-6">
+              <p className="text-[#aaa] text-xs font-semibold uppercase tracking-wide mb-3">
+                {finalAllowed.length} video{finalAllowed.length !== 1 ? 's' : ''}
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                {finalAllowed.map(v => <VCard key={v.id} v={v} showCh={false}/>)}
+              </div>
+            </div>
+          )}
+          {stillBlocked.length > 0 && (
+            <div>
+              <p className="text-[#666] text-xs font-semibold uppercase tracking-wide mb-3 flex items-center gap-2">
+                <IcLock size={12}/>{stillBlocked.length} not available
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                {stillBlocked.map(v => <LockedCard key={v.id} v={v} onReq={req} reqd={reqIds.includes(v.id)}/>)}
+              </div>
+            </div>
+          )}
+          {finalAllowed.length === 0 && stillBlocked.length === 0 && (
+            <div className="text-center py-16 text-[#aaa]">
+              <p className="text-white font-semibold mb-2">No videos to show</p>
+              <p className="text-sm">All videos are hidden by active filters.</p>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+// ── VIDEO PLAYER ──────────────────────────────────────────────────────────────
+function VideoPlayer({vidId}) {
+  const {s, d} = useApp();
+  // Search across all loaded videos
+  const v = Object.values(s.videos).flat().find(x => x.id === vidId);
+  const ch = v ? CHANNELS.find(c => c.id === v.ch) : null;
+  const chOk = v && s.wl.includes(v.ch);
+  const isApproved = s.approved.includes(vidId);
+  const logged = useRef(false);
+
+  function isAllowed(v) {
+    if (!v) return false;
+    if (isApproved) return true;
+    if (v.short && s.filters.blockShorts) return false;
+    if (v.secs > 0 && v.secs < s.filters.minSecs) return false;
+    const hay = (v.title + ' ' + v.desc).toLowerCase();
+    return !s.filters.keywords.some(k => hay.includes(k.toLowerCase()));
+  }
+  const ok = isAllowed(v);
+
+  useEffect(() => {
+    if (v && chOk && ok && !logged.current) {
+      logged.current = true;
+      d({t:'LOG', e:{id:v.id, title:v.title, ch:v.ch, chName:ch?.name||'', thumb:v.thumb, dur:v.dur}});
+    }
+  }, [vidId]);
+
+  // Still loading
+  if (!v && Object.values(s.loading).some(l => l === 'loading')) {
+    return <div className="flex items-center justify-center min-h-[60vh]"><LoadingGrid label="Loading video…"/></div>;
+  }
+
+  if (!v) return (
+    <div className="flex items-center justify-center min-h-[60vh]">
+      <button onClick={() => navigate('/')} className="text-red-400 flex items-center gap-1"><IcLeft size={16}/>Home</button>
+    </div>
+  );
+
+  if (!chOk || !ok) return (
+    <div className="flex flex-col items-center justify-center min-h-[60vh] text-center px-4">
+      <IcLock size={48} cls="text-[#aaa] mb-4"/>
+      <p className="text-white text-lg font-bold mb-2">
+        {v.short && s.filters.blockShorts ? 'Shorts are hidden' : 'Video not available'}
+      </p>
+      <p className="text-[#aaa] max-w-xs mb-4">
+        {v.short && s.filters.blockShorts ? 'A parent has turned off Shorts.' : 'This video is restricted by a parent filter.'}
+      </p>
+      <button onClick={() => window.history.back()} className="text-red-400 flex items-center gap-1">
+        <IcLeft size={16}/>Go back
+      </button>
+    </div>
+  );
+
+  const related = filterVideos(
+    (s.videos[v.ch] || []).filter(x => x.id !== v.id),
+    s.filters
+  ).allowed.slice(0, 6);
+
+  const isLocal = window.location.protocol === 'file:';
+  const params = `autoplay=1&rel=0&modestbranding=1&iv_load_policy=3`;
+
+  return (
+    <div className="max-w-6xl mx-auto px-4 py-4">
+      <div className="flex flex-col lg:flex-row gap-6">
+        <div className="flex-1 min-w-0">
+          <button onClick={() => navigate(`/channel/${v.ch}`)} className="flex items-center gap-1 text-[#aaa] hover:text-white mb-3 text-sm">
+            <IcLeft size={16}/>Back to {ch?.name}
+          </button>
+          {isLocal ? (
+            <div className="relative w-full rounded-xl overflow-hidden bg-[#181818] flex items-center justify-center" style={{paddingBottom:'56.25%'}}>
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 p-6 text-center">
+                <div className="w-16 h-16 bg-red-600 rounded-full flex items-center justify-center mb-2">
+                  <svg width="28" height="28" viewBox="0 0 24 24" fill="white"><path d="M5 3l14 9-14 9V3z"/></svg>
+                </div>
+                <p className="text-white font-semibold text-lg">Ready to watch!</p>
+                <p className="text-[#aaa] text-sm max-w-xs">YouTube can't embed inside a local file. Click below to open on YouTube in a new tab.</p>
+                <a href={`https://www.youtube.com/watch?v=${v.yt}`} target="_blank" rel="noopener noreferrer"
+                  className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white font-semibold px-6 py-3 rounded-xl transition-colors text-sm">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="white"><path d="M5 3l14 9-14 9V3z"/></svg>
+                  Watch on YouTube ↗
+                </a>
+                <p className="text-[#555] text-xs mt-1">For embedded playback: run <code className="bg-[#272727] px-1 rounded text-[#aaa]">python -m http.server 8000</code> in the file folder, then open <code className="bg-[#272727] px-1 rounded text-[#aaa]">localhost:8000/kidtube.html</code></p>
+              </div>
+            </div>
+          ) : (
+            <div className="relative w-full rounded-xl overflow-hidden bg-black" style={{paddingBottom:'56.25%'}}>
+              <iframe src={`https://www.youtube.com/embed/${v.yt}?${params}`} title={v.title}
+                className="absolute inset-0 w-full h-full" allowFullScreen frameBorder="0"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"/>
+            </div>
+          )}
+          <div className="mt-4">
+            <h1 className="text-white text-lg font-bold leading-tight">{v.title}</h1>
+            <div className="flex items-center gap-3 mt-2">
+              <Link to={`/channel/${ch?.id}`} className="flex items-center gap-2 hover:opacity-80">
+                <div className="w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-bold" style={{background:ch?.color||'#555',fontSize:14}}>{ch?.name[0]}</div>
+                <div>
+                  <p className="text-white text-sm font-medium">{ch?.name}</p>
+                  <p className="text-[#aaa] text-xs">{ch?.subscribers} subscribers</p>
+                </div>
+              </Link>
+            </div>
+            <div className="flex items-center gap-3 mt-3 text-[#aaa] text-sm">
+              <span>{v.views}</span><span>·</span><span>{v.date}</span><span>·</span><span>{v.dur}</span>
+            </div>
+            {v.desc && <div className="mt-3 p-3 bg-[#1f1f1f] rounded-xl text-white text-sm leading-relaxed whitespace-pre-line">{v.desc}</div>}
+            <div className="mt-3 flex items-center gap-2 text-xs text-[#666] border border-[#272727] rounded-xl p-2">
+              🛡️ <span>Approved by a parent. No comments or algorithm recommendations shown.</span>
+            </div>
+          </div>
+        </div>
+        {related.length > 0 && (
+          <aside className="lg:w-80 flex-shrink-0">
+            <h3 className="text-white font-semibold text-sm mb-3">More from {ch?.name}</h3>
+            <div className="flex flex-col gap-3">
+              {related.map(rv => (
+                <Link key={rv.id} to={`/watch/${rv.id}`} className="flex gap-2 hover:bg-[#1f1f1f] rounded-lg p-1 transition-colors">
+                  <div className="flex-shrink-0 w-32">
+                    <div className="thumb rounded-lg">
+                      <img src={rv.thumb} alt={rv.title} onError={e=>{e.target.onerror=null;e.target.src=`https://i.ytimg.com/vi/${rv.yt}/mqdefault.jpg`;}}/>
+                      <span className="dur">{rv.dur}</span>
+                    </div>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-white text-xs font-medium clamp2 leading-snug">{rv.title}</p>
+                    <p className="text-[#aaa] text-xs mt-1">{rv.views}</p>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          </aside>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── KID LAYOUT ────────────────────────────────────────────────────────────────
+function KidLayout({children}) {
+  const {s} = useApp();
+  const pending = s.requests.length;
+  return (
+    <div className="min-h-screen bg-[#0f0f0f] flex flex-col">
+      <header className="sticky top-0 z-50 bg-[#0f0f0f] border-b border-[#272727] flex items-center justify-between px-4 h-14">
+        <button onClick={() => navigate('/')} className="select-none">
+          <svg viewBox="0 0 108 22" width="108" height="22">
+            <rect x="0" y="0" width="30" height="22" rx="5" fill="#ff0000"/>
+            <polygon points="11,4 11,18 23,11" fill="white"/>
+            <text x="34" y="17" fontFamily="Arial" fontWeight="700" fontSize="17" fill="white">KidTube</text>
+          </svg>
+        </button>
+        <span className="hidden sm:block text-[#555] text-xs">Safe videos, hand-picked for you 🛡️</span>
+        <button onClick={() => navigate('/parent')} className="relative flex items-center gap-2 bg-[#272727] hover:bg-[#3f3f3f] text-[#aaa] hover:text-white rounded-full px-3 py-1.5 text-sm font-medium">
+          <IcShield size={14}/>Parent
+          {pending > 0 && <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center">{pending}</span>}
+        </button>
+      </header>
+      <main className="flex-1">{children}</main>
+    </div>
+  );
+}
+
+// ── PIN ENTRY ─────────────────────────────────────────────────────────────────
+function PinEntry() {
+  const {s, d} = useApp();
+  const [digits, setDigits] = useState(['','','','']);
+  const [err, setErr] = useState('');
+  const refs = [useRef(),useRef(),useRef(),useRef()];
+  useEffect(() => refs[0].current?.focus(), []);
+  function go(i, v) {
+    if (!/^\d?$/.test(v)) return;
+    const nd = [...digits]; nd[i] = v; setDigits(nd); setErr('');
+    if (v && i < 3) refs[i+1].current?.focus();
+    if (i === 3 && v) tryPin(nd.join(''));
+  }
+  function tryPin(pin) {
+    if (pin === s.pin) { d({t:'LOGIN',pin}); navigate('/parent/dashboard'); }
+    else { setErr('Incorrect PIN. Try again.'); setDigits(['','','','']); setTimeout(() => refs[0].current?.focus(), 50); }
+  }
+  return (
+    <div className="min-h-screen bg-[#0f0f0f] flex items-center justify-center px-4">
+      <div className="w-full max-w-sm">
+        <button onClick={() => navigate('/')} className="flex items-center gap-1 text-[#aaa] hover:text-white mb-8 text-sm"><IcX size={16}/>Cancel</button>
+        <div className="text-center mb-8">
+          <div className="w-16 h-16 bg-gradient-to-br from-blue-600 to-indigo-700 rounded-2xl flex items-center justify-center mx-auto mb-4"><IcShield size={28} cls="text-white"/></div>
+          <h1 className="text-white text-2xl font-bold">Parent Mode</h1>
+          <p className="text-[#aaa] text-sm mt-1">Enter your PIN to manage settings</p>
+          <p className="text-[#555] text-xs mt-1">Default PIN: 1234</p>
+        </div>
+        <div className="flex justify-center gap-3 mb-6">
+          {digits.map((dg,i) => (
+            <input key={i} ref={refs[i]} type="password" inputMode="numeric" maxLength={1} value={dg}
+              onChange={e => go(i, e.target.value)} onKeyDown={e => e.key==='Backspace' && !dg && i>0 && refs[i-1].current?.focus()}
+              className="w-14 h-14 text-center text-2xl font-bold bg-[#1f1f1f] border-2 border-[#3f3f3f] focus:border-blue-500 rounded-xl text-white outline-none transition-colors"/>
+          ))}
+        </div>
+        {err && <p className="text-red-400 text-sm text-center mb-4">{err}</p>}
+        <button onClick={() => tryPin(digits.join(''))} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-xl transition-colors">Unlock</button>
+      </div>
+    </div>
+  );
+}
+
+// ── PARENT PAGES ──────────────────────────────────────────────────────────────
+function PDash() {
+  const {s} = useApp();
+  const wl = CHANNELS.filter(c => s.wl.includes(c.id));
+  let ok=0, bl=0, sh=0;
+  for (const ch of wl) {
+    const vs = s.videos[ch.id] || [];
+    sh += vs.filter(v => v.short).length;
+    const {allowed, blocked} = filterVideos(vs.filter(v => !v.short), {...s.filters, blockShorts:false});
+    ok += allowed.length; bl += blocked.length;
+  }
+  const stats = [
+    {l:'Whitelisted Channels', v:wl.length,         bg:'bg-blue-600',  to:'/parent/channels'},
+    {l:'Available Videos',     v:ok,                bg:'bg-green-600', to:'/parent/channels'},
+    {l:'Videos Filtered',      v:bl+sh,             bg:'bg-orange-500',to:'/parent/filters'},
+    {l:'Pending Requests',     v:s.requests.length, bg:'bg-red-500',   to:'/parent/requests'},
+  ];
+  return (
+    <div>
+      <h2 className="text-white text-xl font-bold mb-1">Overview</h2>
+      <p className="text-[#6b7280] text-sm mb-5">Your family's viewing at a glance.</p>
+      <div className="grid grid-cols-2 gap-3 mb-5">
+        {stats.map(st => (
+          <button key={st.l} onClick={() => navigate(st.to)} className="flex items-center gap-3 p-3 bg-[#1f2937] hover:bg-[#374151] rounded-xl text-left w-full transition-colors">
+            <div className={`w-10 h-10 rounded-lg ${st.bg} flex items-center justify-center flex-shrink-0`}><span className="text-white text-lg font-bold">{st.v}</span></div>
+            <p className="text-[#9ca3af] text-xs leading-tight">{st.l}</p>
+          </button>
+        ))}
+      </div>
+      <div className="bg-[#1f2937] rounded-xl p-4 mb-4">
+        <div className="flex justify-between items-center mb-3">
+          <h3 className="text-white font-semibold text-sm">Active Filters</h3>
+          <button onClick={() => navigate('/parent/filters')} className="text-blue-400 text-xs hover:text-blue-300">Edit →</button>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {s.filters.blockShorts && <span className="bg-green-900 text-green-300 text-xs px-2 py-1 rounded-full">🛡️ Shorts blocked</span>}
+          <span className="bg-blue-900 text-blue-300 text-xs px-2 py-1 rounded-full">Min {s.filters.minSecs}s</span>
+          {s.filters.keywords.map(k => <span key={k} className="bg-red-900 text-red-300 text-xs px-2 py-1 rounded-full">"{k}"</span>)}
+        </div>
+      </div>
+      <div className="bg-[#1f2937] rounded-xl p-4">
+        <div className="flex justify-between items-center mb-3">
+          <h3 className="text-white font-semibold text-sm flex items-center gap-2"><IcClock size={14} cls="text-[#6b7280]"/>Recently Watched</h3>
+          <button onClick={() => navigate('/parent/history')} className="text-blue-400 text-xs hover:text-blue-300">View all →</button>
+        </div>
+        {!s.history.length
+          ? <p className="text-[#6b7280] text-sm text-center py-4">No watch history yet.</p>
+          : s.history.slice(0,5).map((e,i) => (
+            <div key={i} className="flex items-center gap-3 py-2 border-b border-[#374151] last:border-0">
+              <img src={e.thumb} alt="" className="w-16 h-9 rounded-lg object-cover bg-[#374151] flex-shrink-0" onError={ev=>ev.target.style.display='none'}/>
+              <div className="flex-1 min-w-0"><p className="text-white text-xs font-medium clamp1">{e.title}</p><p className="text-[#6b7280] text-xs">{e.chName}</p></div>
+              <span className="text-[#6b7280] text-xs flex-shrink-0">{new Date(e.at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</span>
+            </div>
+          ))}
+      </div>
+    </div>
+  );
+}
+
+function PChannels() {
+  const {s, d} = useApp();
+  const [q, setQ] = useState('');
+  const list = CHANNELS.filter(c => c.name.toLowerCase().includes(q.toLowerCase()) || c.category.toLowerCase().includes(q.toLowerCase()));
+  return (
+    <div>
+      <h2 className="text-white text-xl font-bold mb-1">Channel Whitelist</h2>
+      <p className="text-[#6b7280] text-sm mb-4">Only enabled channels appear for your kids.</p>
+      <div className="relative mb-4">
+        <IcSearch size={16} cls="absolute left-3 top-1/2 -translate-y-1/2 text-[#6b7280]"/>
+        <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search channels…"
+          className="w-full bg-[#1f2937] border border-[#374151] text-white placeholder-[#6b7280] pl-9 pr-4 py-2.5 rounded-xl text-sm outline-none focus:border-blue-500"/>
+      </div>
+      <p className="text-[#6b7280] text-xs mb-3">{s.wl.length} of {CHANNELS.length} enabled</p>
+      <div className="flex flex-col gap-2">
+        {list.map(ch => {
+          const on = s.wl.includes(ch.id);
+          const vs = s.videos[ch.id] || [];
+          const {allowed} = filterVideos(vs, s.filters);
+          const isLoading = s.loading[ch.id] === 'loading';
+          return (
+            <div key={ch.id} onClick={() => d({t:'TOGGLE_CH', id:ch.id})}
+              className={`flex items-center gap-3 p-3 rounded-xl cursor-pointer border transition-all ${on?'bg-[#1f2937] border-blue-700 hover:border-blue-500':'bg-[#111827] border-[#374151] opacity-60 hover:border-[#4b5563]'}`}>
+              <div className="w-12 h-12 rounded-xl flex-shrink-0 flex items-center justify-center text-white text-lg font-bold" style={{background:ch.color}}>{ch.name[0]}</div>
+              <div className="flex-1 min-w-0">
+                <p className="text-white text-sm font-medium">{ch.name}</p>
+                <p className="text-[#6b7280] text-xs">{ch.subscribers} · {ch.category}</p>
+                <div className="flex gap-3 mt-1">
+                  {isLoading
+                    ? <span className="text-[#6b7280] text-xs flex items-center gap-1"><Spinner size={10}/>Loading…</span>
+                    : <span className="text-green-400 text-xs">{allowed.length} available</span>}
+                  <span className="text-[#6b7280] text-xs">{vs.filter(v => v.short).length} Shorts</span>
+                </div>
+              </div>
+              <div className={`w-10 h-6 rounded-full transition-colors ${on?'bg-blue-600':'bg-[#374151]'}`}>
+                <div className={`w-4 h-4 bg-white rounded-full shadow m-1 transition-all ${on?'translate-x-4':''}`}/>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function PFilters() {
+  const {s, d} = useApp();
+  const {filters:f} = s;
+  const [kw, setKw] = useState('');
+  const [p1, setP1] = useState(''); const [p2, setP2] = useState(''); const [pm, setPm] = useState('');
+  const [saved, setSaved] = useState(false);
+  function set(k, v) { d({t:'SET_F',k,v}); flash(); }
+  function flash() { setSaved(true); setTimeout(() => setSaved(false), 2000); }
+  function addKw() { if (!kw.trim()) return; d({t:'ADD_KW',kw}); setKw(''); flash(); }
+  function changePin() {
+    if (!/^\d{4}$/.test(p1)) return setPm('PIN must be 4 digits.');
+    if (p1 !== p2) return setPm('PINs do not match.');
+    d({t:'PIN',pin:p1}); setP1(''); setP2(''); setPm('Updated!'); setTimeout(() => setPm(''), 3000);
+  }
+  function Tog({on, change, label, desc}) {
+    return (
+      <div className="flex items-start gap-3 py-3">
+        <button onClick={() => change(!on)} className={`relative w-11 h-6 rounded-full flex-shrink-0 mt-0.5 transition-colors ${on?'bg-blue-600':'bg-[#374151]'}`}>
+          <span className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all ${on?'left-6':'left-1'}`}/>
+        </button>
+        <div><p className="text-white text-sm font-medium">{label}</p>{desc && <p className="text-[#6b7280] text-xs mt-0.5">{desc}</p>}</div>
+      </div>
+    );
+  }
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1">
+        <h2 className="text-white text-xl font-bold">Filter Settings</h2>
+        {saved && <span className="text-green-400 text-xs">✓ Saved</span>}
+      </div>
+      <p className="text-[#6b7280] text-sm mb-5">Changes take effect immediately.</p>
+      <div className="bg-[#1f2937] rounded-xl p-4 mb-4">
+        <h3 className="text-white font-semibold text-sm mb-1">YouTube Shorts</h3>
+        <div className="border-t border-[#374151]">
+          <Tog on={f.blockShorts} change={v => set('blockShorts',v)} label="Block all Shorts" desc="Hides videos under 62s and anything with #shorts in the title."/>
+        </div>
+      </div>
+      <div className="bg-[#1f2937] rounded-xl p-4 mb-4">
+        <h3 className="text-white font-semibold text-sm mb-3">Minimum Video Duration</h3>
+        <div className="flex items-center gap-3">
+          <input type="range" min={0} max={300} step={15} value={f.minSecs} onChange={e => set('minSecs', +e.target.value)} className="flex-1 accent-blue-500"/>
+          <span className="text-white font-mono w-12 text-right text-sm">{f.minSecs===0?'Any':f.minSecs>=60?`${Math.floor(f.minSecs/60)}m`:`${f.minSecs}s`}</span>
+        </div>
+        <p className="text-[#6b7280] text-xs mt-2">Videos shorter than this are shown as locked.</p>
+      </div>
+      <div className="bg-[#1f2937] rounded-xl p-4 mb-4">
+        <h3 className="text-white font-semibold text-sm mb-1">Blocked Keywords</h3>
+        <p className="text-[#6b7280] text-xs mb-3">Videos whose title or description contains these words are locked.</p>
+        <div className="flex flex-wrap gap-2 mb-3">
+          {!f.keywords.length && <span className="text-[#6b7280] text-xs italic">No keywords</span>}
+          {f.keywords.map(k => (
+            <span key={k} className="flex items-center gap-1 bg-red-900 text-red-300 text-xs px-2.5 py-1 rounded-full">
+              {k}<button onClick={() => { d({t:'DEL_KW',kw:k}); flash(); }} className="hover:text-white ml-0.5"><IcX size={10}/></button>
+            </span>
+          ))}
+        </div>
+        <div className="flex gap-2">
+          <input value={kw} onChange={e => setKw(e.target.value)} onKeyDown={e => e.key==='Enter' && addKw()} placeholder="Add keyword…"
+            className="flex-1 bg-[#111827] border border-[#374151] text-white placeholder-[#4b5563] px-3 py-2 rounded-lg text-sm outline-none focus:border-blue-500"/>
+          <button onClick={addKw} className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-lg transition-colors"><IcPlus size={16}/></button>
+        </div>
+      </div>
+      <div className="bg-[#1f2937] rounded-xl p-4">
+        <h3 className="text-white font-semibold text-sm mb-1 flex items-center gap-2"><IcKey size={14} cls="text-blue-400"/>Change Parent PIN</h3>
+        <p className="text-[#6b7280] text-xs mb-3">Current PIN: {s.pin}</p>
+        <div className="flex flex-col sm:flex-row gap-2">
+          <input type="password" placeholder="New PIN (4 digits)" maxLength={4} inputMode="numeric" value={p1} onChange={e => setP1(e.target.value.replace(/\D/g,''))}
+            className="flex-1 bg-[#111827] border border-[#374151] text-white placeholder-[#4b5563] px-3 py-2 rounded-lg text-sm outline-none focus:border-blue-500"/>
+          <input type="password" placeholder="Confirm PIN" maxLength={4} inputMode="numeric" value={p2} onChange={e => setP2(e.target.value.replace(/\D/g,''))}
+            className="flex-1 bg-[#111827] border border-[#374151] text-white placeholder-[#4b5563] px-3 py-2 rounded-lg text-sm outline-none focus:border-blue-500"/>
+          <button onClick={changePin} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm transition-colors whitespace-nowrap">Update PIN</button>
+        </div>
+        {pm && <p className={`text-xs mt-2 ${pm==='Updated!'?'text-green-400':'text-red-400'}`}>{pm}</p>}
+      </div>
+    </div>
+  );
+}
+
+function PHistory() {
+  const {s, d} = useApp();
+  const [conf, setConf] = useState(false);
+  const grouped = {};
+  for (const e of s.history) {
+    const dt = new Date(e.at).toLocaleDateString([], {weekday:'long',month:'long',day:'numeric'});
+    grouped[dt] = grouped[dt] || []; grouped[dt].push(e);
+  }
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1">
+        <h2 className="text-white text-xl font-bold">Watch History</h2>
+        {s.history.length > 0 && (
+          <button onClick={() => conf ? (d({t:'CLR_HIST'}), setConf(false)) : setConf(true)}
+            className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition-colors ${conf?'bg-red-600 text-white':'text-[#9ca3af] hover:text-red-400 hover:bg-[#374151]'}`}>
+            <IcTrash size={13}/>{conf?'Click again to confirm':'Clear all'}
+          </button>
+        )}
+      </div>
+      <p className="text-[#6b7280] text-sm mb-5">Everything your kids have watched.</p>
+      {!s.history.length
+        ? <div className="text-center py-16 text-[#6b7280]"><IcClock size={40} cls="mx-auto mb-3 opacity-40"/><p className="text-white font-medium">No history yet</p></div>
+        : Object.entries(grouped).map(([date, entries]) => (
+          <div key={date} className="mb-5">
+            <h3 className="text-[#9ca3af] text-xs font-semibold uppercase tracking-wider mb-2 flex items-center gap-2"><IcClock size={11}/>{date}</h3>
+            <div className="bg-[#1f2937] rounded-xl overflow-hidden divide-y divide-[#374151]">
+              {entries.map((e,i) => (
+                <div key={i} className="flex items-center gap-3 px-4 py-3 hover:bg-[#374151] transition-colors">
+                  <img src={e.thumb} alt="" className="w-20 h-11 rounded-lg object-cover bg-[#374151] flex-shrink-0" onError={ev=>ev.target.style.display='none'}/>
+                  <div className="flex-1 min-w-0"><p className="text-white text-sm font-medium clamp1">{e.title}</p><p className="text-[#6b7280] text-xs">{e.chName} · {e.dur}</p></div>
+                  <span className="text-[#6b7280] text-xs flex-shrink-0">{new Date(e.at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+    </div>
+  );
+}
+
+function PRequests() {
+  const {s, d} = useApp();
+  return (
+    <div>
+      <h2 className="text-white text-xl font-bold mb-1">Unlock Requests</h2>
+      <p className="text-[#6b7280] text-sm mb-5">Review videos your kids want to watch.</p>
+      {!s.requests.length
+        ? (
+          <div className="text-center py-16 text-[#6b7280]">
+            <IcMsg size={40} cls="mx-auto mb-3 opacity-40"/>
+            <p className="text-white font-medium mb-1">No pending requests</p>
+            <p className="text-sm">When your kids tap "Ask Parent to unlock", requests appear here.</p>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-3">
+            {s.requests.map(r => (
+              <div key={r.rid} className="bg-[#1f2937] rounded-xl p-4 flex flex-col sm:flex-row gap-4">
+                <div className="flex-shrink-0 w-full sm:w-36">
+                  <div className="thumb rounded-lg"><img src={r.thumb} alt={r.title} onError={e=>e.target.style.display='none'}/></div>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-white font-medium text-sm">{r.title}</p>
+                  <p className="text-[#9ca3af] text-xs mt-1">{r.chName}</p>
+                  <p className="text-[#6b7280] text-xs flex items-center gap-1 mt-1"><IcClock size={11}/>{new Date(r.at).toLocaleString([],{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})}</p>
+                  <div className="flex gap-2 mt-3">
+                    <button onClick={() => d({t:'APPROVE',rid:r.rid})} className="flex items-center gap-1.5 bg-green-700 hover:bg-green-600 text-white text-sm px-3 py-1.5 rounded-lg transition-colors"><IcOk size={14}/>Approve</button>
+                    <button onClick={() => d({t:'DENY',rid:r.rid})} className="flex items-center gap-1.5 bg-[#374151] hover:bg-red-800 text-[#9ca3af] hover:text-white text-sm px-3 py-1.5 rounded-lg transition-colors"><IcXcirc size={14}/>Deny</button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      <div className="mt-5 bg-[#1e3a5f] border border-blue-800 rounded-xl p-4 text-xs text-blue-400">
+        <p className="text-blue-300 font-semibold mb-1">How unlock requests work</p>
+        Approved videos bypass the filter for that video only. Shorts can never be unlocked.
+      </div>
+    </div>
+  );
+}
+
+// ── PARENT LAYOUT ─────────────────────────────────────────────────────────────
+const P_NAV = [
+  {id:'dashboard', label:'Dashboard',   Ic:IcGrid},
+  {id:'channels',  label:'Channels',    Ic:IcList},
+  {id:'filters',   label:'Filters',     Ic:IcFilter},
+  {id:'history',   label:'Watch History',Ic:IcClock},
+  {id:'requests',  label:'Requests',    Ic:IcMsg, badge:true},
+];
+const P_PAGES = {
+  dashboard: <PDash/>,
+  channels:  <PChannels/>,
+  filters:   <PFilters/>,
+  history:   <PHistory/>,
+  requests:  <PRequests/>,
+};
+
+function ParentLayout({sec}) {
+  const {s, d} = useApp();
+  const pending = s.requests.length;
+  return (
+    <div className="min-h-screen bg-[#111827] text-white flex flex-col">
+      <header className="bg-[#1f2937] border-b border-[#374151] px-4 py-3 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 bg-gradient-to-br from-blue-600 to-indigo-700 rounded-lg flex items-center justify-center"><span className="text-white text-xs font-bold">KT</span></div>
+          <div><p className="text-white font-bold text-sm">KidTube Parent Controls</p><p className="text-[#6b7280] text-xs">Managing your family's viewing</p></div>
+        </div>
+        <div className="flex items-center gap-2">
+          <button onClick={() => navigate('/')} className="flex items-center gap-1.5 text-[#9ca3af] hover:text-white text-sm px-3 py-1.5 rounded-lg hover:bg-[#374151] transition-colors"><IcTv size={14}/><span className="hidden sm:inline">Kid View</span></button>
+          <button onClick={() => { d({t:'LOGOUT'}); navigate('/'); }} className="flex items-center gap-1.5 text-[#9ca3af] hover:text-red-400 text-sm px-3 py-1.5 rounded-lg hover:bg-[#374151] transition-colors"><IcLogOut size={14}/><span className="hidden sm:inline">Lock</span></button>
+        </div>
+      </header>
+      <div className="flex flex-1 overflow-hidden">
+        <nav className="w-48 bg-[#1f2937] border-r border-[#374151] flex-col py-4 gap-1 px-2 hidden sm:flex">
+          {P_NAV.map(n => (
+            <button key={n.id} onClick={() => navigate(`/parent/${n.id}`)}
+              className={`relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium w-full transition-colors ${sec===n.id?'bg-blue-600 text-white':'text-[#9ca3af] hover:bg-[#374151] hover:text-white'}`}>
+              <n.Ic size={16}/>{n.label}
+              {n.badge && pending > 0 && <span className="ml-auto bg-red-500 text-white text-[10px] font-bold w-5 h-5 rounded-full flex items-center justify-center">{pending}</span>}
+            </button>
+          ))}
+        </nav>
+        <div className="sm:hidden fixed bottom-0 left-0 right-0 bg-[#1f2937] border-t border-[#374151] flex z-50">
+          {P_NAV.map(n => (
+            <button key={n.id} onClick={() => navigate(`/parent/${n.id}`)}
+              className={`relative flex-1 flex flex-col items-center gap-0.5 py-2 text-[10px] font-medium ${sec===n.id?'text-blue-400':'text-[#6b7280]'}`}>
+              <n.Ic size={18}/>{n.label.split(' ')[0]}
+              {n.badge && pending > 0 && <span className="absolute top-1 right-1/4 bg-red-500 text-white text-[8px] font-bold w-3.5 h-3.5 rounded-full flex items-center justify-center">{pending}</span>}
+            </button>
+          ))}
+        </div>
+        <main className="flex-1 overflow-y-auto p-4 sm:p-6 pb-20 sm:pb-6">{P_PAGES[sec] || <PDash/>}</main>
+      </div>
+    </div>
+  );
+}
+
+// ── APP ROOT ──────────────────────────────────────────────────────────────────
+function App() {
+  const {s} = useApp();
+  const path = useHashRouter();
+  useEffect(() => { if (path==='/parent' && s.authed) navigate('/parent/dashboard'); }, [path, s.authed]);
+  if (path==='/' || path==='') return <KidLayout><KidHome/></KidLayout>;
+  if (path.startsWith('/channel/')) return <KidLayout><ChannelPage chId={path.split('/')[2]}/></KidLayout>;
+  if (path.startsWith('/watch/')) return <KidLayout><VideoPlayer vidId={path.split('/')[2]}/></KidLayout>;
+  if (path==='/parent') return s.authed ? null : <PinEntry/>;
+  if (path.startsWith('/parent/')) return s.authed ? <ParentLayout sec={path.split('/')[2]||'dashboard'}/> : <PinEntry/>;
+  return <KidLayout><KidHome/></KidLayout>;
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(
+  <React.StrictMode><AppProvider><App/></AppProvider></React.StrictMode>
+);
+</script>
+</body>
+</html>
