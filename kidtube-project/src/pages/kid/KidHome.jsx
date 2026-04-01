@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { getAllChannels } from '../../api';
 import { splitVideosByAccess } from '../../access';
@@ -6,6 +7,88 @@ import VCard from '../../components/VCard';
 import Spinner from '../../components/Spinner';
 import LoadingGrid from '../../components/LoadingGrid';
 
+function parseViews(label) {
+  if (!label) return 0;
+  const match = String(label).match(/([\d.]+)\s*([KMB])?/i);
+  if (!match) return 0;
+  const value = Number(match[1]);
+  if (Number.isNaN(value)) return 0;
+
+  switch ((match[2] || '').toUpperCase()) {
+    case 'B': return value * 1e9;
+    case 'M': return value * 1e6;
+    case 'K': return value * 1e3;
+    default: return value;
+  }
+}
+
+function uniqueVideos(videos) {
+  const seen = new Set();
+  return videos.filter((video) => {
+    if (!video || seen.has(video.id)) return false;
+    seen.add(video.id);
+    return true;
+  });
+}
+
+function HomeShelf({ title, subtitle, videos, accent = 'bg-red-500' }) {
+  if (!videos.length) return null;
+
+  return (
+    <section className="mb-10">
+      <div className="flex items-end justify-between gap-3 mb-4">
+        <div>
+          <h2 className="text-lg font-bold flex items-center gap-2">
+            <span className={`w-1 h-5 rounded-full inline-block ${accent}`} />
+            {title}
+          </h2>
+          {subtitle && <p className="text-[#9a9a9a] text-sm mt-1">{subtitle}</p>}
+        </div>
+      </div>
+      <div className="feed-shelf">
+        {videos.map((video) => (
+          <div key={video.id} className="feed-shelf-item">
+            <VCard v={video} />
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function ChannelShortcut({ channel, count, loadingState }) {
+  const isLoading = loadingState === 'loading';
+  const hasError = loadingState === 'err';
+
+  return (
+    <Link
+      to={`/channel/${channel.id}`}
+      className="group relative overflow-hidden rounded-3xl border border-[#272727] bg-[#181818] p-4 hover:border-[#3a3a3a] hover:bg-[#202020] transition-all"
+    >
+      <div
+        className="absolute inset-0 opacity-60"
+        style={{ background: `radial-gradient(circle at top right, ${channel.color}44, transparent 55%)` }}
+      />
+      <div className="relative flex items-center gap-3">
+        <div className="w-14 h-14 rounded-full overflow-hidden ring-4 ring-[#101010] flex items-center justify-center text-white text-xl font-bold" style={{ background: channel.color }}>
+          {channel.thumb ? (
+            <img src={channel.thumb} alt={channel.name} className="w-full h-full object-cover" onError={(event) => { event.target.style.display = 'none'; }} />
+          ) : channel.name[0]}
+        </div>
+        <div className="min-w-0">
+          <p className="text-white font-semibold clamp1">{channel.name}</p>
+          <p className="text-[#a8a8a8] text-xs mt-1">
+            {isLoading ? 'Loading videos...' : hasError ? 'Could not load right now' : `${count} ready to watch`}
+          </p>
+          <span className="inline-flex mt-2 text-[10px] uppercase tracking-[0.18em] text-white/90 rounded-full px-2.5 py-1" style={{ background: `${channel.color}cc` }}>
+            {channel.category}
+          </span>
+        </div>
+      </div>
+    </Link>
+  );
+}
+
 export default function KidHome() {
   const { s } = useApp();
   const allChannels = getAllChannels(s);
@@ -13,15 +96,60 @@ export default function KidHome() {
   const globalLoading = whitelistedChannels.some((channel) => s.loading[channel.id] === 'loading');
   const allLoaded = whitelistedChannels.every((channel) => s.loading[channel.id] === 'ok' || s.loading[channel.id] === 'err');
   const pinned = s.pinned || [];
-  const recent = whitelistedChannels
-    .flatMap((channel) => splitVideosByAccess(s.videos[channel.id] || [], s).allowed)
-    .sort((left, right) => new Date(right.date) - new Date(left.date))
-    .slice(0, 8);
+
+  const channelRows = useMemo(() => (
+    whitelistedChannels.map((channel) => {
+      const videos = s.videos[channel.id] || [];
+      const allowed = splitVideosByAccess(videos, s).allowed;
+      return {
+        channel,
+        loadingState: s.loading[channel.id],
+        allowed,
+        featured: allowed[0] || null,
+      };
+    })
+  ), [s, whitelistedChannels]);
+
+  const allAllowed = useMemo(() => uniqueVideos(channelRows.flatMap((entry) => entry.allowed)), [channelRows]);
+
+  const recent = useMemo(() => (
+    [...allAllowed].sort((left, right) => new Date(right.date) - new Date(left.date))
+  ), [allAllowed]);
+
+  const popular = useMemo(() => (
+    [...allAllowed].sort((left, right) => parseViews(right.views) - parseViews(left.views))
+  ), [allAllowed]);
+
+  const longerVideos = useMemo(() => (
+    allAllowed
+      .filter((video) => video.secs >= 8 * 60)
+      .sort((left, right) => right.secs - left.secs)
+  ), [allAllowed]);
+
+  const featured = pinned[0] || popular[0] || recent[0] || null;
+  const queue = uniqueVideos([
+    ...pinned,
+    ...recent,
+    ...popular,
+    ...channelRows.map((entry) => entry.featured),
+  ]).filter((video) => video.id !== featured?.id).slice(0, 4);
+
+  const chips = [
+    { label: 'All', value: allAllowed.length },
+    { label: 'Parent Picks', value: pinned.length },
+    { label: 'Fresh', value: recent.slice(0, 12).length },
+    { label: 'Popular', value: popular.slice(0, 12).length },
+    { label: 'Longer Videos', value: longerVideos.length },
+    ...whitelistedChannels.slice(0, 4).map((channel) => ({
+      label: channel.category,
+      value: channelRows.find((entry) => entry.channel.id === channel.id)?.allowed.length || 0,
+    })),
+  ];
 
   if (!whitelistedChannels.length && !pinned.length) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] text-center px-4">
-        <div className="text-6xl mb-4">📺</div>
+        <div className="text-6xl mb-4">TV</div>
         <h2 className="text-xl font-bold mb-2">No channels yet!</h2>
         <p className="text-[#aaa]">Ask a parent to add some channels.</p>
       </div>
@@ -29,87 +157,179 @@ export default function KidHome() {
   }
 
   return (
-    <div className="max-w-6xl mx-auto px-4 py-6">
-      {whitelistedChannels.length > 0 && (
-        <section className="mb-10">
-          <h2 className="text-lg font-bold mb-4 flex items-center gap-2">
-            <span className="w-1 h-5 bg-red-500 rounded-full inline-block" />Your Channels
-            {globalLoading && <Spinner size={16} />}
-          </h2>
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
-            {whitelistedChannels.map((channel) => {
-              const videos = s.videos[channel.id] || [];
-              const { allowed } = splitVideosByAccess(videos, s);
-              const isLoading = s.loading[channel.id] === 'loading';
-              const hasError = s.loading[channel.id] === 'err';
-
-              return (
-                <Link
-                  key={channel.id}
-                  to={`/channel/${channel.id}`}
-                  className="group flex flex-col items-center gap-3 p-3 rounded-2xl hover:bg-[#1f1f1f] transition-colors cursor-pointer"
-                >
-                  <div className="relative">
-                    <div className="w-20 h-20 rounded-full overflow-hidden ring-4 ring-[#272727] group-hover:ring-red-500 transition-all flex items-center justify-center text-white text-3xl font-bold" style={{ background: channel.color }}>
-                      {channel.thumb ? (
-                        <img src={channel.thumb} alt={channel.name} className="w-full h-full object-cover" onError={(event) => { event.target.style.display = 'none'; }} />
-                      ) : channel.name[0]}
-                    </div>
-                    {isLoading && (
-                      <div className="absolute inset-0 flex items-center justify-center">
-                        <div style={{ width: 20, height: 20, border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', borderRadius: '50%' }} className="animate-spin" />
-                      </div>
-                    )}
-                  </div>
-                  <div className="text-center">
-                    <p className="text-white text-xs font-medium clamp2 max-w-[120px]">{channel.name}</p>
-                    <p className="text-[#aaa] text-xs mt-0.5">
-                      {isLoading ? 'Loading...' : hasError ? 'Error' : `${allowed.length} videos`}
+    <div className="max-w-7xl mx-auto px-4 py-6">
+      <section className="mb-6 rounded-[28px] border border-[#252525] bg-[#161616] overflow-hidden">
+        <div className="grid lg:grid-cols-[1.4fr_0.9fr]">
+          <div className="relative p-6 md:p-8 min-h-[320px] flex flex-col justify-end">
+            <div className="absolute inset-0" style={{ background: `linear-gradient(135deg, ${featured?.pinned ? '#facc15' : '#ff2d55'}22 0%, #0f0f0f 58%, #0f0f0f 100%)` }} />
+            {featured && (
+              <>
+                <img src={featured.thumb} alt="" className="absolute inset-0 w-full h-full object-cover opacity-20" />
+                <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(15,15,15,0.1),rgba(15,15,15,0.92))]" />
+              </>
+            )}
+            <div className="relative max-w-2xl">
+              <div className="flex flex-wrap items-center gap-2 mb-4">
+                <span className="inline-flex rounded-full bg-red-600 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-white">
+                  Home
+                </span>
+                {globalLoading && (
+                  <span className="inline-flex items-center gap-2 rounded-full bg-[#202020] px-3 py-1 text-xs text-[#d0d0d0]">
+                    <Spinner size={14} />
+                    Loading your feed
+                  </span>
+                )}
+              </div>
+              <h1 className="text-3xl md:text-4xl font-black tracking-tight text-white max-w-xl">
+                A fuller KidTube feed that feels familiar from the very first screen.
+              </h1>
+              <p className="text-[#d0d0d0] max-w-xl mt-3 text-sm md:text-base">
+                Fresh uploads, popular picks, and rows from trusted channels all in one place, with the same parent filters still applied.
+              </p>
+              {featured ? (
+                <div className="mt-6 rounded-3xl bg-[#121212]/80 backdrop-blur p-4 border border-white/10 max-w-xl">
+                  <p className="text-[11px] uppercase tracking-[0.22em] text-[#ffb4c0] mb-2">
+                    {featured.pinned ? 'Featured Parent Pick' : 'Featured Video'}
+                  </p>
+                  <Link to={`/watch/${featured.id}`} className="block group">
+                    <p className="text-white text-xl font-bold clamp2 group-hover:text-red-300 transition-colors">
+                      {featured.title}
                     </p>
-                    <span className="inline-block mt-1 text-[10px] px-2 py-0.5 rounded-full text-white" style={{ background: channel.color }}>
-                      {channel.category}
-                    </span>
+                    <p className="text-[#b7b7b7] text-sm mt-2">
+                      {featured.chName} | {featured.views} | {featured.dur}
+                    </p>
+                  </Link>
+                </div>
+              ) : (
+                <div className="mt-6 rounded-3xl bg-[#121212]/80 backdrop-blur p-4 border border-white/10 max-w-xl">
+                  <p className="text-white font-semibold">Your safe feed is getting ready.</p>
+                  <p className="text-[#a8a8a8] text-sm mt-1">As soon as the channels finish loading, shelves will appear here.</p>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="border-t lg:border-t-0 lg:border-l border-[#252525] bg-[#121212] p-5 md:p-6">
+            <div className="flex items-center justify-between gap-3 mb-4">
+              <div>
+                <p className="text-white font-semibold">Up next on your feed</p>
+                <p className="text-[#8d8d8d] text-sm">Quick picks from trusted videos and channels</p>
+              </div>
+              <span className="text-xs rounded-full bg-[#202020] px-3 py-1 text-[#c6c6c6]">
+                {allAllowed.length} videos ready
+              </span>
+            </div>
+            <div className="space-y-3">
+              {queue.map((video) => (
+                <Link key={video.id} to={`/watch/${video.id}`} className="flex gap-3 rounded-2xl p-2 hover:bg-[#1c1c1c] transition-colors">
+                  <div className="w-36 flex-shrink-0">
+                    <div className="thumb rounded-xl">
+                      <img src={video.thumb} alt={video.title} onError={(event) => { event.target.onerror = null; event.target.src = `https://i.ytimg.com/vi/${video.yt}/mqdefault.jpg`; }} />
+                      <span className="dur">{video.dur}</span>
+                    </div>
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-white text-sm font-medium clamp2">{video.title}</p>
+                    <p className="text-[#a8a8a8] text-xs mt-1">{video.chName}</p>
+                    <p className="text-[#767676] text-xs mt-1">{video.views}</p>
                   </div>
                 </Link>
-              );
-            })}
+              ))}
+              {!queue.length && (
+                <div className="rounded-2xl border border-dashed border-[#2b2b2b] px-4 py-6 text-center text-sm text-[#8f8f8f]">
+                  More picks will show up here once your safe channels finish loading.
+                </div>
+              )}
+            </div>
           </div>
-        </section>
-      )}
+        </div>
+      </section>
+
+      <section className="mb-8">
+        <div className="flex flex-wrap gap-2">
+          {chips.map((chip, index) => (
+            <span
+              key={`${chip.label}-${index}`}
+              className={`rounded-full px-4 py-2 text-sm border ${index === 0 ? 'bg-white text-black border-white' : 'bg-[#1c1c1c] text-[#f1f1f1] border-[#303030]'}`}
+            >
+              {chip.label}
+              <span className={`ml-2 text-xs ${index === 0 ? 'text-black/70' : 'text-[#aaaaaa]'}`}>{chip.value}</span>
+            </span>
+          ))}
+        </div>
+      </section>
+
+      <section className="mb-10">
+        <div className="flex items-center justify-between gap-3 mb-4">
+          <h2 className="text-lg font-bold flex items-center gap-2">
+            <span className="w-1 h-5 bg-red-500 rounded-full inline-block" />
+            Browse Channels
+          </h2>
+          {globalLoading && <Spinner size={16} />}
+        </div>
+        <div className="grid sm:grid-cols-2 xl:grid-cols-4 gap-4">
+          {channelRows.map((entry) => (
+            <ChannelShortcut
+              key={entry.channel.id}
+              channel={entry.channel}
+              count={entry.allowed.length}
+              loadingState={entry.loadingState}
+            />
+          ))}
+        </div>
+      </section>
 
       {pinned.length > 0 && (
-        <section className="mb-10">
-          <h2 className="text-lg font-bold mb-4 flex items-center gap-2">
-            <span className="w-1 h-5 bg-yellow-400 rounded-full inline-block" />Parent's Picks
-            <span className="text-xs text-yellow-400 font-normal">★ hand-picked for you</span>
-          </h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-            {pinned.map((video) => <VCard key={video.id} v={video} />)}
-          </div>
-        </section>
+        <HomeShelf
+          title="Parent's Picks"
+          subtitle="Hand-picked videos that always stay easy to find."
+          videos={pinned.slice(0, 10)}
+          accent="bg-yellow-400"
+        />
       )}
 
-      {!allLoaded && recent.length === 0 && pinned.length === 0 && (
+      {!allLoaded && allAllowed.length === 0 && pinned.length === 0 && (
         <LoadingGrid label="Loading your channels..." />
       )}
 
-      {allLoaded && recent.length === 0 && pinned.length === 0 && (
+      {allLoaded && allAllowed.length === 0 && pinned.length === 0 && (
         <div className="text-center py-16 text-[#aaa]">
           <p className="text-white font-semibold mb-2">No videos available</p>
           <p className="text-sm">Try adjusting filters in Parent Controls.</p>
         </div>
       )}
 
-      {recent.length > 0 && (
-        <section>
-          <h2 className="text-lg font-bold mb-4 flex items-center gap-2">
-            <span className="w-1 h-5 bg-red-500 rounded-full inline-block" />Recent Videos
-          </h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-            {recent.map((video) => <VCard key={video.id} v={video} />)}
-          </div>
-        </section>
-      )}
+      <HomeShelf
+        title="Fresh Uploads"
+        subtitle="The newest safe videos from your approved channels."
+        videos={recent.slice(0, 12)}
+      />
+
+      <HomeShelf
+        title="Popular Right Now"
+        subtitle="The biggest videos across your trusted channels."
+        videos={popular.slice(0, 12)}
+        accent="bg-pink-500"
+      />
+
+      <HomeShelf
+        title="Longer Watch Time"
+        subtitle="Great when kids want something closer to a full episode."
+        videos={longerVideos.slice(0, 12)}
+        accent="bg-blue-500"
+      />
+
+      {channelRows
+        .filter((entry) => entry.allowed.length > 0)
+        .map((entry) => (
+          <HomeShelf
+            key={entry.channel.id}
+            title={entry.channel.name}
+            subtitle={`${entry.channel.category} videos from a trusted channel`}
+            videos={entry.allowed.slice(0, 10)}
+            accent="bg-emerald-500"
+          />
+        ))}
     </div>
   );
 }

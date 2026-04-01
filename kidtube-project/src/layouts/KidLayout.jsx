@@ -5,6 +5,7 @@ import { IcShield } from '../icons';
 export default function KidLayout({ children }) {
   const { s } = useApp();
   const pending = s.requests.length;
+
   return (
     <div className="min-h-screen bg-[#0f0f0f] flex flex-col">
       <header className="sticky top-0 z-50 bg-[#0f0f0f] border-b border-[#272727] flex items-center justify-between px-4 h-14">
@@ -15,7 +16,7 @@ export default function KidLayout({ children }) {
             <text x="34" y="17" fontFamily="Arial" fontWeight="700" fontSize="17" fill="white">KidTube</text>
           </svg>
         </button>
-        <span className="hidden sm:block text-[#555] text-xs">Safe videos, hand-picked for you 🛡️</span>
+        <span className="hidden sm:block text-[#555] text-xs">Safe videos, hand-picked for you.</span>
         <button
           onClick={() => navigate('/parent')}
           className="relative flex items-center gap-2 bg-[#272727] hover:bg-[#3f3f3f] text-[#aaa] hover:text-white rounded-full px-3 py-1.5 text-sm font-medium"
@@ -28,6 +29,18 @@ export default function KidLayout({ children }) {
           )}
         </button>
       </header>
+      <div className="border-b border-[#1f1f1f] bg-[#121212] px-4 py-2">
+        <div className="no-scrollbar max-w-7xl mx-auto flex items-center gap-2 text-xs text-[#8f8f8f] overflow-x-auto whitespace-nowrap">
+          <span className="rounded-full bg-[#1f1f1f] px-3 py-1 text-white">Home</span>
+          <span>Fresh uploads</span>
+          <span className="text-[#444]">|</span>
+          <span>Trusted channels</span>
+          <span className="text-[#444]">|</span>
+          <span>Parent-approved picks</span>
+          <span className="text-[#444]">|</span>
+          <span>Shorts hidden when blocked</span>
+        </div>
+      </div>
       <main className="flex-1">{children}</main>
     </div>
   );
