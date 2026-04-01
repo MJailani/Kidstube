@@ -1,4 +1,5 @@
 import { API_BASE_URL, CHANNELS, HAS_PROXY_URL } from './config';
+import { HAS_SUPABASE_CONFIG, supabase } from './lib/supabase';
 
 export function parseDuration(iso) {
   if (!iso) return 0;
@@ -85,7 +86,18 @@ async function proxyPathRequest(path, params = {}) {
     }
   });
 
-  const response = await fetch(url.toString());
+  const headers = {};
+  if (HAS_SUPABASE_CONFIG && supabase) {
+    const { data } = await supabase.auth.getSession();
+    const accessToken = data.session?.access_token;
+    if (accessToken) {
+      headers.Authorization = `Bearer ${accessToken}`;
+    }
+  }
+
+  const response = await fetch(url.toString(), {
+    headers,
+  });
   const data = await response.json();
 
   if (!response.ok) {

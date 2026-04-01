@@ -1,11 +1,11 @@
-const { buildProfileWatch } = require('./_profileFeed');
+const { buildProfileWatch, getAuthenticatedParentId } = require('./_profileFeed');
 
 function sendJson(res, status, body) {
   res.statusCode = status;
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   res.end(JSON.stringify(body));
 }
 
@@ -29,10 +29,11 @@ module.exports = async function handler(req, res) {
       return sendJson(res, 400, { error: 'Missing profileId or videoId.' });
     }
 
-    const data = await buildProfileWatch(profileId, videoId);
+    const parentId = await getAuthenticatedParentId(req);
+    const data = await buildProfileWatch(profileId, videoId, parentId);
     res.setHeader('Cache-Control', 's-maxage=60, stale-while-revalidate=180');
     return sendJson(res, 200, { data });
   } catch (error) {
-    return sendJson(res, 400, { error: error.message || 'Watch request failed' });
+    return sendJson(res, error.statusCode || 400, { error: error.message || 'Watch request failed' });
   }
 };

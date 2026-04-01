@@ -87,6 +87,34 @@ function supabaseHeaders() {
   };
 }
 
+async function getAuthenticatedParentId(req) {
+  const authHeader = req.headers.authorization || req.headers.Authorization || '';
+  const match = String(authHeader).match(/^Bearer\s+(.+)$/i);
+  if (!match) {
+    const error = new Error('Missing parent session.');
+    error.statusCode = 401;
+    throw error;
+  }
+
+  const accessToken = match[1].trim();
+  const { url, headers } = supabaseHeaders();
+  const response = await fetch(`${url.replace(/\/$/, '')}/auth/v1/user`, {
+    headers: {
+      apikey: headers.apikey,
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+
+  const data = await response.json();
+  if (!response.ok || !data?.id) {
+    const error = new Error('Invalid or expired parent session.');
+    error.statusCode = 401;
+    throw error;
+  }
+
+  return data.id;
+}
+
 async function supabaseRest(path, query = '') {
   const { url, headers } = supabaseHeaders();
   const response = await fetch(`${url.replace(/\/$/, '')}/rest/v1/${path}${query}`, { headers });
@@ -97,9 +125,9 @@ async function supabaseRest(path, query = '') {
   return data;
 }
 
-async function loadProfileBundle(profileId) {
+async function loadProfileBundle(profileId, parentId) {
   const [profileRows, filterRows, keywordRows, profileChannelRows, approvalRows, pinnedRows, historyRows] = await Promise.all([
-    supabaseRest('child_profiles', `?id=eq.${encodeURIComponent(profileId)}&select=id,name,avatar_color,is_default,parent_id`),
+    supabaseRest('child_profiles', `?id=eq.${encodeURIComponent(profileId)}&parent_id=eq.${encodeURIComponent(parentId)}&select=id,name,avatar_color,is_default,parent_id`),
     supabaseRest('profile_filters', `?profile_id=eq.${encodeURIComponent(profileId)}&select=block_shorts,min_secs`),
     supabaseRest('profile_keywords', `?profile_id=eq.${encodeURIComponent(profileId)}&select=keyword&order=keyword.asc`),
     supabaseRest('profile_channels', `?profile_id=eq.${encodeURIComponent(profileId)}&select=channel_id`),
@@ -171,8 +199,8 @@ async function loadChannelRows(bundle, maxResults = 30) {
   );
 }
 
-async function buildProfileFeed(profileId) {
-  const bundle = await loadProfileBundle(profileId);
+async function buildProfileFeed(profileId, parentId) {
+  const bundle = await loadProfileBundle(profileId, parentId);
   const channelRows = await loadChannelRows(bundle, 30);
 
   const allAllowed = uniqueVideos(channelRows.flatMap((entry) => entry.allowed));
@@ -214,8 +242,8 @@ async function buildProfileFeed(profileId) {
   };
 }
 
-async function buildProfileChannel(profileId, channelId) {
-  const bundle = await loadProfileBundle(profileId);
+async function buildProfileChannel(profileId, channelId, parentId) {
+  const bundle = await loadProfileBundle(profileId, parentId);
   const channel = bundle.channels.find((entry) => entry.id === channelId);
   if (!channel) {
     throw new Error('Channel not available for this profile.');
@@ -236,8 +264,8 @@ async function buildProfileChannel(profileId, channelId) {
   };
 }
 
-async function buildProfileWatch(profileId, videoId) {
-  const bundle = await loadProfileBundle(profileId);
+async function buildProfileWatch(profileId, videoId, parentId) {
+  const bundle = await loadProfileBundle(profileId, parentId);
   const channelRows = await loadChannelRows(bundle, 30);
   const allAllowed = uniqueVideos([
     ...channelRows.flatMap((entry) => entry.allowed),
@@ -279,4 +307,5 @@ module.exports = {
   buildProfileChannel,
   buildProfileFeed,
   buildProfileWatch,
+  getAuthenticatedParentId,
 };

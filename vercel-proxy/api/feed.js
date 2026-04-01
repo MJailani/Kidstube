@@ -1,11 +1,11 @@
-const { buildProfileFeed } = require('./_profileFeed');
+const { buildProfileFeed, getAuthenticatedParentId } = require('./_profileFeed');
 
 function sendJson(res, status, body) {
   res.statusCode = status;
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   res.end(JSON.stringify(body));
 }
 
@@ -28,10 +28,11 @@ module.exports = async function handler(req, res) {
       return sendJson(res, 400, { error: 'Missing profileId.' });
     }
 
-    const data = await buildProfileFeed(profileId);
+    const parentId = await getAuthenticatedParentId(req);
+    const data = await buildProfileFeed(profileId, parentId);
     res.setHeader('Cache-Control', 's-maxage=120, stale-while-revalidate=300');
     return sendJson(res, 200, { data });
   } catch (error) {
-    return sendJson(res, 400, { error: error.message || 'Feed request failed' });
+    return sendJson(res, error.statusCode || 400, { error: error.message || 'Feed request failed' });
   }
 };

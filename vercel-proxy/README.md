@@ -12,6 +12,8 @@ Set these in Vercel project settings:
 
 `SUPABASE_SERVICE_ROLE_KEY` is backend-only. Do not expose it to the frontend.
 
+The profile-aware endpoints also require a signed-in Supabase parent session. The frontend now sends the parent's access token in the `Authorization` header, and the proxy verifies that the requested child profile belongs to that parent before returning data.
+
 ## Endpoint
 
 The frontend calls:
