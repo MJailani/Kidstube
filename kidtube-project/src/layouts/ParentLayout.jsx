@@ -28,7 +28,7 @@ const P_PAGES = {
 };
 
 export default function ParentLayout({ sec }) {
-  const { s, d } = useApp();
+  const { s, d, logoutParent } = useApp();
   const pending = s.requests.length;
 
   return (
@@ -52,7 +52,14 @@ export default function ParentLayout({ sec }) {
             <span className="hidden sm:inline">Kid View</span>
           </button>
           <button
-            onClick={() => { d({ t: 'LOGOUT' }); navigate('/'); }}
+            onClick={async () => {
+              try {
+                await logoutParent();
+              } finally {
+                d({ t: 'LOGOUT' });
+                navigate('/');
+              }
+            }}
             className="flex items-center gap-1.5 text-[#9ca3af] hover:text-red-400 text-sm px-3 py-1.5 rounded-lg hover:bg-[#374151] transition-colors"
           >
             <IcLogOut size={14} />

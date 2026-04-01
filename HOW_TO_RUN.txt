@@ -20,6 +20,8 @@ LOCAL DEVELOPMENT
    Example:
 
      VITE_API_BASE_URL=https://your-vercel-proxy.vercel.app/api
+     VITE_SUPABASE_URL=https://your-project-ref.supabase.co
+     VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
 
 2. Start the frontend:
 
@@ -75,9 +77,11 @@ SECURITY NOTES
 - GitHub Pages stays static
 - This is much safer than shipping the key in the browser bundle
 - Parent controls are still client-side UX controls, not tamper-proof security
+- Supabase migration scaffolding is now included, but auth/profile data is not
+  live in the UI until we wire the screens over from localStorage
 
 
 NEXT RECOMMENDED STEP
 ------------------------------------------------------------
-If you want stronger protection later, move parent state and approvals
-to the backend too, not just the YouTube API calls.
+Set up Supabase and run `supabase/schema.sql`, then migrate parent auth and
+child profiles into the backend screen by screen.

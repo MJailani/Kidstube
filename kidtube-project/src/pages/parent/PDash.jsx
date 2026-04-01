@@ -5,7 +5,7 @@ import { navigate } from '../../router';
 import { IcClock } from '../../icons';
 
 export default function PDash() {
-  const { s } = useApp();
+  const { s, activeProfile, hasSupabaseAuth } = useApp();
   const whitelistedChannels = getAllChannels(s).filter((channel) => s.wl.includes(channel.id));
 
   let availableCount = 0;
@@ -33,6 +33,16 @@ export default function PDash() {
     <div>
       <h2 className="text-white text-xl font-bold mb-1">Overview</h2>
       <p className="text-[#6b7280] text-sm mb-5">Your family's viewing at a glance.</p>
+
+      {hasSupabaseAuth && activeProfile && (
+        <div className="bg-[#1f2937] rounded-xl p-4 mb-4">
+          <p className="text-[#6b7280] text-xs uppercase tracking-[0.18em] mb-1">Active Child Profile</p>
+          <p className="text-white font-semibold">{activeProfile.name}</p>
+          <p className="text-[#9ca3af] text-sm mt-1">
+            Filters now load from Supabase for this profile. Channel lists, approvals, and history will be migrated next.
+          </p>
+        </div>
+      )}
 
       <div className="grid grid-cols-2 gap-3 mb-5">
         {stats.map((stat) => (
