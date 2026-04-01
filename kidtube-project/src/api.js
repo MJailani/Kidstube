@@ -75,6 +75,30 @@ async function proxyRequest(action, params = {}) {
   return data.data;
 }
 
+async function proxyPathRequest(path, params = {}) {
+  requireProxyUrl();
+  const url = new URL(`${API_BASE_URL.replace(/\/$/, '')}/${path.replace(/^\//, '')}`);
+
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== '') {
+      url.searchParams.set(key, String(value));
+    }
+  });
+
+  const response = await fetch(url.toString());
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(data.error || `Proxy request failed with ${response.status}`);
+  }
+
+  if (data.error) {
+    throw new Error(data.error);
+  }
+
+  return data.data;
+}
+
 export async function fetchChannelVideos(channelId, maxResults = 30) {
   return proxyRequest('channelVideos', { channelId, maxResults });
 }
@@ -93,4 +117,8 @@ export async function searchChannels(query, maxResults = 6) {
 
 export async function searchVideos(query, maxResults = 8) {
   return proxyRequest('searchVideos', { query, maxResults });
+}
+
+export async function fetchProfileFeed(profileId) {
+  return proxyPathRequest('feed', { profileId });
 }

@@ -1,6 +1,6 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useApp } from '../../context/AppContext';
-import { getAllChannels } from '../../api';
+import { fetchProfileFeed, getAllChannels } from '../../api';
 import { splitVideosByAccess } from '../../access';
 import { Link } from '../../router';
 import VCard from '../../components/VCard';
@@ -96,7 +96,10 @@ function ChannelShortcut({ channel, count, loadingState }) {
 }
 
 export default function KidHome() {
-  const { s } = useApp();
+  const { s, hasSupabaseAuth, activeProfileId } = useApp();
+  const [serverFeed, setServerFeed] = useState(null);
+  const [serverFeedLoading, setServerFeedLoading] = useState(false);
+  const [serverFeedError, setServerFeedError] = useState('');
   const allChannels = getAllChannels(s);
   const whitelistedChannels = allChannels.filter((channel) => s.wl.includes(channel.id));
   const globalLoading = whitelistedChannels.some((channel) => s.loading[channel.id] === 'loading');
@@ -132,23 +135,67 @@ export default function KidHome() {
       .sort((left, right) => right.secs - left.secs)
   ), [allAllowed]);
 
-  const featured = pinned[0] || popular[0] || recent[0] || null;
-  const queue = uniqueVideos([
+  useEffect(() => {
+    if (!hasSupabaseAuth || !activeProfileId) {
+      setServerFeed(null);
+      setServerFeedError('');
+      setServerFeedLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+
+    async function loadFeed() {
+      setServerFeedLoading(true);
+      setServerFeedError('');
+
+      try {
+        const data = await fetchProfileFeed(activeProfileId);
+        if (!cancelled) {
+          setServerFeed(data);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setServerFeed(null);
+          setServerFeedError(error.message || 'Could not load the safe feed.');
+        }
+      } finally {
+        if (!cancelled) {
+          setServerFeedLoading(false);
+        }
+      }
+    }
+
+    loadFeed();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeProfileId, hasSupabaseAuth]);
+
+  const effectiveChannelRows = serverFeed?.channelRows || channelRows;
+  const effectivePinned = serverFeed?.shelves?.pinned || pinned.slice(0, 10);
+  const effectiveFeatured = serverFeed?.shelves?.featured || pinned[0] || popular[0] || recent[0] || null;
+  const effectiveQueue = serverFeed?.shelves?.queue || uniqueVideos([
     ...pinned,
     ...recent,
     ...popular,
     ...channelRows.map((entry) => entry.featured),
-  ]).filter((video) => video.id !== featured?.id).slice(0, 4);
+  ]).filter((video) => video.id !== effectiveFeatured?.id).slice(0, 4);
+  const effectiveRecent = serverFeed?.shelves?.recent || recent.slice(0, 12);
+  const effectivePopular = serverFeed?.shelves?.popular || popular.slice(0, 12);
+  const effectiveLonger = serverFeed?.shelves?.longerVideos || longerVideos.slice(0, 12);
+  const effectiveVideoCount = serverFeed?.stats?.totalAllowed ?? allAllowed.length;
 
   const chips = [
-    { label: 'All', value: allAllowed.length, targetId: 'browse-channels' },
-    { label: 'Parent Picks', value: pinned.length, targetId: 'parents-picks' },
-    { label: 'Fresh', value: recent.slice(0, 12).length, targetId: 'fresh-uploads' },
-    { label: 'Popular', value: popular.slice(0, 12).length, targetId: 'popular-right-now' },
-    { label: 'Longer Videos', value: longerVideos.length, targetId: 'longer-watch-time' },
+    { label: 'All', value: effectiveVideoCount, targetId: 'browse-channels' },
+    { label: 'Parent Picks', value: effectivePinned.length, targetId: 'parents-picks' },
+    { label: 'Fresh', value: effectiveRecent.length, targetId: 'fresh-uploads' },
+    { label: 'Popular', value: effectivePopular.length, targetId: 'popular-right-now' },
+    { label: 'Longer Videos', value: effectiveLonger.length, targetId: 'longer-watch-time' },
     ...whitelistedChannels.slice(0, 4).map((channel) => ({
       label: channel.category,
-      value: channelRows.find((entry) => entry.channel.id === channel.id)?.allowed.length || 0,
+      value: effectiveChannelRows.find((entry) => entry.channel.id === channel.id)?.allowed.length || 0,
       targetId: `channel-shelf-${channel.id}`,
     })),
   ];
@@ -167,10 +214,10 @@ export default function KidHome() {
     <div className="max-w-7xl mx-auto px-4 py-6">
       <section className="mb-6 rounded-[28px] border border-[#252525] bg-[#161616] overflow-hidden">
         <div className="grid lg:grid-cols-[1.4fr_0.9fr]">
-          {featured ? (
-            <Link to={`/watch/${featured.id}`} className="relative block p-6 md:p-8 min-h-[320px] group">
-              <div className="absolute inset-0" style={{ background: `linear-gradient(135deg, ${featured.pinned ? '#facc15' : '#ff2d55'}22 0%, #0f0f0f 58%, #0f0f0f 100%)` }} />
-              <img src={featured.thumb} alt="" className="absolute inset-0 w-full h-full object-cover opacity-20 transition-transform duration-500 group-hover:scale-[1.02]" />
+          {effectiveFeatured ? (
+            <Link to={`/watch/${effectiveFeatured.id}`} className="relative block p-6 md:p-8 min-h-[320px] group">
+              <div className="absolute inset-0" style={{ background: `linear-gradient(135deg, ${effectiveFeatured.pinned ? '#facc15' : '#ff2d55'}22 0%, #0f0f0f 58%, #0f0f0f 100%)` }} />
+              <img src={effectiveFeatured.thumb} alt="" className="absolute inset-0 w-full h-full object-cover opacity-20 transition-transform duration-500 group-hover:scale-[1.02]" />
               <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(15,15,15,0.08),rgba(15,15,15,0.92))]" />
               <div className="relative max-w-2xl h-full flex flex-col justify-end">
                 <div className="flex flex-wrap items-center gap-2 mb-4">
@@ -178,9 +225,9 @@ export default function KidHome() {
                     Home
                   </span>
                   <span className="inline-flex rounded-full bg-[#121212]/80 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-white border border-white/10">
-                    {featured.pinned ? 'Featured Parent Pick' : 'Featured Video'}
+                    {effectiveFeatured.pinned ? 'Featured Parent Pick' : 'Featured Video'}
                   </span>
-                  {globalLoading && (
+                  {(globalLoading || serverFeedLoading) && (
                     <span className="inline-flex items-center gap-2 rounded-full bg-[#202020] px-3 py-1 text-xs text-[#d0d0d0]">
                       <Spinner size={14} />
                       Loading your feed
@@ -189,10 +236,10 @@ export default function KidHome() {
                 </div>
                 <div className="rounded-3xl bg-[#121212]/78 backdrop-blur p-4 md:p-5 border border-white/10 max-w-xl transition-colors group-hover:border-white/20">
                   <p className="text-white text-2xl md:text-3xl font-black clamp2 group-hover:text-red-300 transition-colors">
-                    {featured.title}
+                    {effectiveFeatured.title}
                   </p>
                   <p className="text-[#b7b7b7] text-sm md:text-base mt-3">
-                    {featured.chName} | {featured.views} | {featured.dur}
+                    {effectiveFeatured.chName} | {effectiveFeatured.views} | {effectiveFeatured.dur}
                   </p>
                 </div>
               </div>
@@ -205,7 +252,7 @@ export default function KidHome() {
                   <span className="inline-flex rounded-full bg-red-600 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-white">
                     Home
                   </span>
-                  {globalLoading && (
+                  {(globalLoading || serverFeedLoading) && (
                     <span className="inline-flex items-center gap-2 rounded-full bg-[#202020] px-3 py-1 text-xs text-[#d0d0d0]">
                       <Spinner size={14} />
                       Loading your feed
@@ -227,11 +274,11 @@ export default function KidHome() {
                 <p className="text-[#8d8d8d] text-sm">Quick picks from trusted videos and channels</p>
               </div>
               <span className="text-xs rounded-full bg-[#202020] px-3 py-1 text-[#c6c6c6]">
-                {allAllowed.length} videos ready
+                {effectiveVideoCount} videos ready
               </span>
             </div>
             <div className="space-y-3">
-              {queue.map((video) => (
+              {effectiveQueue.map((video) => (
                 <Link key={video.id} to={`/watch/${video.id}`} className="flex gap-3 rounded-2xl p-2 hover:bg-[#1c1c1c] transition-colors">
                   <div className="w-36 flex-shrink-0">
                     <div className="thumb rounded-xl">
@@ -246,7 +293,7 @@ export default function KidHome() {
                   </div>
                 </Link>
               ))}
-              {!queue.length && (
+              {!effectiveQueue.length && (
                 <div className="rounded-2xl border border-dashed border-[#2b2b2b] px-4 py-6 text-center text-sm text-[#8f8f8f]">
                   More picks will show up here once your safe channels finish loading.
                 </div>
@@ -255,6 +302,12 @@ export default function KidHome() {
           </div>
         </div>
       </section>
+
+      {serverFeedError && (
+        <div className="mb-5 rounded-2xl border border-[#4b1f1f] bg-[#221010] px-4 py-3 text-sm text-red-200">
+          Couldn&apos;t load the backend-filtered feed, so KidTube is falling back to the local view for now.
+        </div>
+      )}
 
       <section className="mb-8">
         <div className="flex flex-wrap gap-2">
@@ -281,7 +334,7 @@ export default function KidHome() {
           {globalLoading && <Spinner size={16} />}
         </div>
         <div className="grid sm:grid-cols-2 xl:grid-cols-4 gap-4">
-          {channelRows.map((entry) => (
+          {effectiveChannelRows.map((entry) => (
             <ChannelShortcut
               key={entry.channel.id}
               channel={entry.channel}
@@ -292,12 +345,12 @@ export default function KidHome() {
         </div>
       </section>
 
-      {pinned.length > 0 && (
+      {effectivePinned.length > 0 && (
         <HomeShelf
           sectionId="parents-picks"
           title="Parent's Picks"
           subtitle="Hand-picked videos that always stay easy to find."
-          videos={pinned.slice(0, 10)}
+          videos={effectivePinned}
           accent="bg-yellow-400"
         />
       )}
@@ -317,14 +370,14 @@ export default function KidHome() {
         sectionId="fresh-uploads"
         title="Fresh Uploads"
         subtitle="The newest safe videos from your approved channels."
-        videos={recent.slice(0, 12)}
+        videos={effectiveRecent}
       />
 
       <HomeShelf
         sectionId="popular-right-now"
         title="Popular Right Now"
         subtitle="The biggest videos across your trusted channels."
-        videos={popular.slice(0, 12)}
+        videos={effectivePopular}
         accent="bg-pink-500"
       />
 
@@ -332,11 +385,11 @@ export default function KidHome() {
         sectionId="longer-watch-time"
         title="Longer Watch Time"
         subtitle="Great when kids want something closer to a full episode."
-        videos={longerVideos.slice(0, 12)}
+        videos={effectiveLonger}
         accent="bg-blue-500"
       />
 
-      {channelRows
+      {effectiveChannelRows
         .filter((entry) => entry.allowed.length > 0)
         .map((entry) => (
           <HomeShelf
