@@ -92,7 +92,7 @@ export default function PFilters() {
         <h3 className="text-white font-semibold text-sm mb-1 flex items-center gap-2">
           <IcKey size={14} cls="text-blue-400" />Change Parent PIN
         </h3>
-        <p className="text-[#6b7280] text-xs mb-3">Current PIN: {s.pin}</p>
+        <p className="text-[#6b7280] text-xs mb-3">Choose a 4-digit PIN that only the parent knows.</p>
         <div className="flex flex-col sm:flex-row gap-2">
           <input type="password" placeholder="New PIN (4 digits)" maxLength={4} inputMode="numeric"
             value={p1} onChange={e => setP1(e.target.value.replace(/\D/g, ''))}

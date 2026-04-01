@@ -7,8 +7,29 @@ export default function PinEntry() {
   const { s, d } = useApp();
   const [digits, setDigits] = useState(['', '', '', '']);
   const [err, setErr] = useState('');
+  const [failedAttempts, setFailedAttempts] = useState(0);
+  const [lockedUntil, setLockedUntil] = useState(0);
   const refs = [useRef(), useRef(), useRef(), useRef()];
   useEffect(() => refs[0].current?.focus(), []);
+  useEffect(() => {
+    if (!lockedUntil) {
+      return undefined;
+    }
+
+    const remaining = lockedUntil - Date.now();
+    if (remaining <= 0) {
+      setLockedUntil(0);
+      setErr('');
+      return undefined;
+    }
+
+    const timer = window.setTimeout(() => {
+      setLockedUntil(0);
+      setErr('');
+    }, remaining);
+
+    return () => window.clearTimeout(timer);
+  }, [lockedUntil]);
 
   function go(i, v) {
     if (!/^\d?$/.test(v)) return;
@@ -18,8 +39,31 @@ export default function PinEntry() {
   }
 
   function tryPin(pin) {
-    if (pin === s.pin) { d({ t: 'LOGIN', pin }); navigate('/parent/dashboard'); }
-    else { setErr('Incorrect PIN. Try again.'); setDigits(['', '', '', '']); setTimeout(() => refs[0].current?.focus(), 50); }
+    if (Date.now() < lockedUntil) {
+      setErr(`Too many attempts. Try again in ${Math.ceil((lockedUntil - Date.now()) / 1000)}s.`);
+      return;
+    }
+
+    if (pin === s.pin) {
+      setFailedAttempts(0);
+      d({ t: 'LOGIN', pin });
+      navigate('/parent/dashboard');
+      return;
+    }
+
+    const nextFailures = failedAttempts + 1;
+    setFailedAttempts(nextFailures);
+    setDigits(['', '', '', '']);
+
+    if (nextFailures >= 5) {
+      setFailedAttempts(0);
+      setLockedUntil(Date.now() + 30000);
+      setErr('Too many attempts. Try again in 30s.');
+    } else {
+      setErr('Incorrect PIN. Try again.');
+    }
+
+    setTimeout(() => refs[0].current?.focus(), 50);
   }
 
   return (
@@ -34,7 +78,6 @@ export default function PinEntry() {
           </div>
           <h1 className="text-white text-2xl font-bold">Parent Mode</h1>
           <p className="text-[#aaa] text-sm mt-1">Enter your PIN to manage settings</p>
-          <p className="text-[#555] text-xs mt-1">Default PIN: 1234</p>
         </div>
         <div className="flex justify-center gap-3 mb-6">
           {digits.map((dg, i) => (
@@ -46,8 +89,8 @@ export default function PinEntry() {
           ))}
         </div>
         {err && <p className="text-red-400 text-sm text-center mb-4">{err}</p>}
-        <button onClick={() => tryPin(digits.join(''))}
-          className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-xl transition-colors">
+        <button onClick={() => tryPin(digits.join(''))} disabled={Date.now() < lockedUntil}
+          className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white font-semibold py-3 rounded-xl transition-colors">
           Unlock
         </button>
       </div>

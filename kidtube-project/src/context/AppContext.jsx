@@ -35,7 +35,17 @@ function reducer(s, a) {
     case 'DEL_KW':     return { ...s, filters: { ...s.filters, keywords: s.filters.keywords.filter(k => k !== a.kw) } };
     case 'LOG':        { const e = { ...a.e, at: new Date().toISOString() }; return { ...s, history: [e, ...s.history.filter(x => x.id !== e.id)].slice(0, 200) }; }
     case 'REQ':        return s.requests.find(r => r.vid === a.r.vid) ? s : { ...s, requests: [{ ...a.r, rid: Date.now() + '', at: new Date().toISOString() }, ...s.requests] };
-    case 'APPROVE':    { const r = s.requests.find(x => x.rid === a.rid); return { ...s, requests: s.requests.filter(x => x.rid !== a.rid), approved: r && !s.approved.includes(r.vid) ? [...s.approved, r.vid] : s.approved }; }
+    case 'APPROVE':    {
+      const r = s.requests.find(x => x.rid === a.rid);
+      return {
+        ...s,
+        requests: s.requests.filter(x => x.rid !== a.rid),
+        approved:
+          r && !r.short && !s.approved.includes(r.vid)
+            ? [...s.approved, r.vid]
+            : s.approved,
+      };
+    }
     case 'DENY':       return { ...s, requests: s.requests.filter(x => x.rid !== a.rid) };
     case 'CLR_HIST':   return { ...s, history: [] };
     case 'ADD_PIN':    { const ps = s.pinned || []; return ps.find(x => x.id === a.v.id) ? s : { ...s, pinned: [a.v, ...ps] }; }

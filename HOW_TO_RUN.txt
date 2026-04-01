@@ -1,61 +1,83 @@
-═══════════════════════════════════════════════════════════
- KidTube — How to Run
-═══════════════════════════════════════════════════════════
+============================================================
+ KidTube - Frontend on GitHub Pages + Proxy on Vercel
+============================================================
 
-OPTION 1 — Instant demo (no installation needed)
-─────────────────────────────────────────────────
-Just open this file in any browser:
+PROJECT FOLDERS
+------------------------------------------------------------
+- `kidtube-project`
+  React frontend for GitHub Pages
 
-  kidtube.html
-
-That's it. Double-click it. Works offline once loaded.
-Default parent PIN: 1234
-
-
-OPTION 2 — Full React development project
-──────────────────────────────────────────
-The kidtube/ folder is a complete Vite + React + Tailwind project.
-Run these commands from the kidtube/ directory:
-
-  npm install
-  npm run dev
-
-Then open http://localhost:5173 in your browser.
-This version is better for customisation and adding the YouTube API.
+- `vercel-proxy`
+  Serverless backend proxy for Vercel
 
 
-CONNECTING THE REAL YOUTUBE DATA API
-──────────────────────────────────────────
-1. Go to https://console.cloud.google.com
-2. Create a project → Enable "YouTube Data API v3"
-3. Create an API key (restrict it to your domain)
-4. In src/mockData.js, replace the CHANNELS and VIDEOS arrays
-   with calls to:
-     GET https://www.googleapis.com/youtube/v3/channels
-     GET https://www.googleapis.com/youtube/v3/playlistItems
-   using your API key.
+LOCAL DEVELOPMENT
+------------------------------------------------------------
+1. Frontend:
 
-The filtering logic (applyFilters) and all UI components
-stay exactly the same — you're just swapping mock data
-for live API data.
+   In `kidtube-project`, create `.env.local` from `.env.example`
+
+   Example:
+
+     VITE_API_BASE_URL=https://your-vercel-proxy.vercel.app/api
+
+2. Start the frontend:
+
+     npm install
+     npm run dev
+
+3. Open:
+
+     http://localhost:5173
 
 
-FEATURES IN THIS BUILD
-──────────────────────────────────────────
-Kid Mode:
-  ✓ YouTube-like dark interface
-  ✓ Channel grid — only whitelisted channels shown
-  ✓ Video grid per channel
-  ✓ YouTube iframe player (real embeds, no sidebar/comments)
-  ✓ Locked cards for filtered videos with "Ask Parent" button
-  ✓ Shorts completely hidden (not even shown as locked)
+VERCEL PROXY SETUP
+------------------------------------------------------------
+1. Create a new Vercel project from the `vercel-proxy` folder
+2. In Vercel project settings, add:
 
-Parent Mode (PIN: 1234):
-  ✓ 4-digit PIN lock
-  ✓ Dashboard with stats
-  ✓ Channel whitelist toggle
-  ✓ Filter settings — block Shorts, min duration, keyword block
-  ✓ Watch history grouped by date
-  ✓ Unlock request queue — approve or deny per video
-  ✓ Change parent PIN
-  ✓ All settings persisted in localStorage
+     YOUTUBE_API_KEY=your_real_key
+
+3. Deploy it
+4. Copy the deployed URL, for example:
+
+     https://kidtube-proxy.vercel.app
+
+5. Your frontend env should use:
+
+     VITE_API_BASE_URL=https://kidtube-proxy.vercel.app/api
+
+
+GITHUB PAGES FRONTEND SETUP
+------------------------------------------------------------
+1. In `kidtube-project/.env.local`, set:
+
+     VITE_API_BASE_URL=https://your-vercel-proxy.vercel.app/api
+
+2. Build the frontend:
+
+     npm run build
+
+3. Deploy the generated `dist` folder to GitHub Pages
+
+4. If you use the included GitHub Actions workflow, set this repository variable:
+
+     VITE_API_BASE_URL=https://your-vercel-proxy.vercel.app/api
+
+Notes:
+- The frontend uses hash routing, so GitHub Pages routing is safe
+- Vite is configured with a relative base for static hosting
+
+
+SECURITY NOTES
+------------------------------------------------------------
+- The YouTube API key now lives only in Vercel, not in the frontend
+- GitHub Pages stays static
+- This is much safer than shipping the key in the browser bundle
+- Parent controls are still client-side UX controls, not tamper-proof security
+
+
+NEXT RECOMMENDED STEP
+------------------------------------------------------------
+If you want stronger protection later, move parent state and approvals
+to the backend too, not just the YouTube API calls.

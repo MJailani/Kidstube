@@ -1,5 +1,6 @@
 import { useApp } from '../../context/AppContext';
-import { getAllChannels, filterVideos, fetchChannelVideos } from '../../api';
+import { getAllChannels, fetchChannelVideos } from '../../api';
+import { splitVideosByAccess } from '../../access';
 import { navigate } from '../../router';
 import VCard from '../../components/VCard';
 import LockedCard from '../../components/LockedCard';
@@ -9,7 +10,7 @@ import { IcLeft, IcLock } from '../../icons';
 
 export default function ChannelPage({ chId }) {
   const { s, d } = useApp();
-  const ch = getAllChannels(s).find(c => c.id === chId);
+  const ch = getAllChannels(s).find((channel) => channel.id === chId);
 
   if (!ch || !s.wl.includes(chId)) {
     return (
@@ -24,18 +25,27 @@ export default function ChannelPage({ chId }) {
   }
 
   const loadState = s.loading[chId];
-  const all = s.videos[chId] || [];
-  const shorts = all.filter(v => v.short);
-  const { allowed, blocked } = filterVideos(all, s.filters);
-  const finalAllowed = [...allowed, ...blocked.filter(v => s.approved.includes(v.id))];
-  const stillBlocked = blocked.filter(v => !s.approved.includes(v.id));
-  const reqIds = s.requests.map(r => r.vid);
+  const allVideos = s.videos[chId] || [];
+  const { allowed: finalAllowed, blocked: stillBlocked, hiddenShorts } = splitVideosByAccess(allVideos, s);
+  const requestedIds = s.requests.map((request) => request.vid);
 
-  function req(v) { d({ t: 'REQ', r: { vid: v.id, title: v.title, chName: ch.name, thumb: v.thumb } }); }
+  function requestUnlock(video) {
+    d({
+      t: 'REQ',
+      r: {
+        vid: video.id,
+        title: video.title,
+        chName: ch.name,
+        thumb: video.thumb,
+        short: !!video.short,
+      },
+    });
+  }
+
   function retry() {
     d({ t: 'VIDS_START', ch: chId });
     fetchChannelVideos(chId)
-      .then(videos => d({ t: 'VIDS_OK', ch: chId, videos }))
+      .then((videos) => d({ t: 'VIDS_OK', ch: chId, videos }))
       .catch(() => d({ t: 'VIDS_ERR', ch: chId }));
   }
 
@@ -49,21 +59,23 @@ export default function ChannelPage({ chId }) {
         <div className="h-28 rounded-2xl mb-3" style={{ background: `linear-gradient(135deg,${ch.color}88,${ch.color}22)` }} />
         <div className="flex items-end gap-3">
           <div className="w-14 h-14 rounded-full overflow-hidden ring-4 ring-[#0f0f0f] flex items-center justify-center text-white text-xl font-bold" style={{ background: ch.color }}>
-            {ch.thumb
-              ? <img src={ch.thumb} alt={ch.name} className="w-full h-full object-cover" onError={e => { e.target.style.display = 'none'; }} />
-              : ch.name[0]}
+            {ch.thumb ? (
+              <img src={ch.thumb} alt={ch.name} className="w-full h-full object-cover" onError={(event) => { event.target.style.display = 'none'; }} />
+            ) : ch.name[0]}
           </div>
           <div>
             <h1 className="text-xl font-bold">{ch.name}</h1>
-            <p className="text-[#aaa] text-sm">{ch.handle} · {ch.subscribers} subscribers</p>
-            {s.filters.blockShorts && shorts.length > 0 && (
-              <span className="inline-block mt-1 text-xs bg-[#272727] text-[#aaa] px-2 py-0.5 rounded-full">{shorts.length} Shorts hidden</span>
+            <p className="text-[#aaa] text-sm">{`${ch.handle} - ${ch.subscribers} subscribers`}</p>
+            {s.filters.blockShorts && hiddenShorts.length > 0 && (
+              <span className="inline-block mt-1 text-xs bg-[#272727] text-[#aaa] px-2 py-0.5 rounded-full">
+                {hiddenShorts.length} Shorts hidden
+              </span>
             )}
           </div>
         </div>
       </div>
 
-      {loadState === 'loading' && <LoadingGrid label={`Loading ${ch.name} videos…`} />}
+      {loadState === 'loading' && <LoadingGrid label={`Loading ${ch.name} videos...`} />}
       {loadState === 'err' && <ErrBox onRetry={retry} />}
       {loadState === 'ok' && (
         <>
@@ -73,20 +85,29 @@ export default function ChannelPage({ chId }) {
                 {finalAllowed.length} video{finalAllowed.length !== 1 ? 's' : ''}
               </p>
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                {finalAllowed.map(v => <VCard key={v.id} v={v} showCh={false} />)}
+                {finalAllowed.map((video) => <VCard key={video.id} v={video} showCh={false} />)}
               </div>
             </div>
           )}
+
           {stillBlocked.length > 0 && (
             <div>
               <p className="text-[#666] text-xs font-semibold uppercase tracking-wide mb-3 flex items-center gap-2">
                 <IcLock size={12} />{stillBlocked.length} not available
               </p>
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                {stillBlocked.map(v => <LockedCard key={v.id} v={v} onReq={req} reqd={reqIds.includes(v.id)} />)}
+                {stillBlocked.map((video) => (
+                  <LockedCard
+                    key={video.id}
+                    v={video}
+                    onReq={requestUnlock}
+                    reqd={requestedIds.includes(video.id)}
+                  />
+                ))}
               </div>
             </div>
           )}
+
           {finalAllowed.length === 0 && stillBlocked.length === 0 && (
             <div className="text-center py-16 text-[#aaa]">
               <p className="text-white font-semibold mb-2">No videos to show</p>
