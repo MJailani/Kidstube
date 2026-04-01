@@ -160,54 +160,58 @@ export default function KidHome() {
     <div className="max-w-7xl mx-auto px-4 py-6">
       <section className="mb-6 rounded-[28px] border border-[#252525] bg-[#161616] overflow-hidden">
         <div className="grid lg:grid-cols-[1.4fr_0.9fr]">
-          <div className="relative p-6 md:p-8 min-h-[320px] flex flex-col justify-end">
-            <div className="absolute inset-0" style={{ background: `linear-gradient(135deg, ${featured?.pinned ? '#facc15' : '#ff2d55'}22 0%, #0f0f0f 58%, #0f0f0f 100%)` }} />
-            {featured && (
-              <>
-                <img src={featured.thumb} alt="" className="absolute inset-0 w-full h-full object-cover opacity-20" />
-                <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(15,15,15,0.1),rgba(15,15,15,0.92))]" />
-              </>
-            )}
-            <div className="relative max-w-2xl">
-              <div className="flex flex-wrap items-center gap-2 mb-4">
-                <span className="inline-flex rounded-full bg-red-600 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-white">
-                  Home
-                </span>
-                {globalLoading && (
-                  <span className="inline-flex items-center gap-2 rounded-full bg-[#202020] px-3 py-1 text-xs text-[#d0d0d0]">
-                    <Spinner size={14} />
-                    Loading your feed
+          {featured ? (
+            <Link to={`/watch/${featured.id}`} className="relative block p-6 md:p-8 min-h-[320px] group">
+              <div className="absolute inset-0" style={{ background: `linear-gradient(135deg, ${featured.pinned ? '#facc15' : '#ff2d55'}22 0%, #0f0f0f 58%, #0f0f0f 100%)` }} />
+              <img src={featured.thumb} alt="" className="absolute inset-0 w-full h-full object-cover opacity-20 transition-transform duration-500 group-hover:scale-[1.02]" />
+              <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(15,15,15,0.08),rgba(15,15,15,0.92))]" />
+              <div className="relative max-w-2xl h-full flex flex-col justify-end">
+                <div className="flex flex-wrap items-center gap-2 mb-4">
+                  <span className="inline-flex rounded-full bg-red-600 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-white">
+                    Home
                   </span>
-                )}
-              </div>
-              <h1 className="text-3xl md:text-4xl font-black tracking-tight text-white max-w-xl">
-                A fuller KidTube feed that feels familiar from the very first screen.
-              </h1>
-              <p className="text-[#d0d0d0] max-w-xl mt-3 text-sm md:text-base">
-                Fresh uploads, popular picks, and rows from trusted channels all in one place, with the same parent filters still applied.
-              </p>
-              {featured ? (
-                <div className="mt-6 rounded-3xl bg-[#121212]/80 backdrop-blur p-4 border border-white/10 max-w-xl">
-                  <p className="text-[11px] uppercase tracking-[0.22em] text-[#ffb4c0] mb-2">
+                  <span className="inline-flex rounded-full bg-[#121212]/80 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-white border border-white/10">
                     {featured.pinned ? 'Featured Parent Pick' : 'Featured Video'}
-                  </p>
-                  <Link to={`/watch/${featured.id}`} className="block group">
-                    <p className="text-white text-xl font-bold clamp2 group-hover:text-red-300 transition-colors">
-                      {featured.title}
-                    </p>
-                    <p className="text-[#b7b7b7] text-sm mt-2">
-                      {featured.chName} | {featured.views} | {featured.dur}
-                    </p>
-                  </Link>
+                  </span>
+                  {globalLoading && (
+                    <span className="inline-flex items-center gap-2 rounded-full bg-[#202020] px-3 py-1 text-xs text-[#d0d0d0]">
+                      <Spinner size={14} />
+                      Loading your feed
+                    </span>
+                  )}
                 </div>
-              ) : (
+                <div className="rounded-3xl bg-[#121212]/78 backdrop-blur p-4 md:p-5 border border-white/10 max-w-xl transition-colors group-hover:border-white/20">
+                  <p className="text-white text-2xl md:text-3xl font-black clamp2 group-hover:text-red-300 transition-colors">
+                    {featured.title}
+                  </p>
+                  <p className="text-[#b7b7b7] text-sm md:text-base mt-3">
+                    {featured.chName} | {featured.views} | {featured.dur}
+                  </p>
+                </div>
+              </div>
+            </Link>
+          ) : (
+            <div className="relative p-6 md:p-8 min-h-[320px] flex flex-col justify-end">
+              <div className="absolute inset-0" style={{ background: 'linear-gradient(135deg, #ff2d5522 0%, #0f0f0f 58%, #0f0f0f 100%)' }} />
+              <div className="relative max-w-2xl">
+                <div className="flex flex-wrap items-center gap-2 mb-4">
+                  <span className="inline-flex rounded-full bg-red-600 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-white">
+                    Home
+                  </span>
+                  {globalLoading && (
+                    <span className="inline-flex items-center gap-2 rounded-full bg-[#202020] px-3 py-1 text-xs text-[#d0d0d0]">
+                      <Spinner size={14} />
+                      Loading your feed
+                    </span>
+                  )}
+                </div>
                 <div className="mt-6 rounded-3xl bg-[#121212]/80 backdrop-blur p-4 border border-white/10 max-w-xl">
                   <p className="text-white font-semibold">Your safe feed is getting ready.</p>
                   <p className="text-[#a8a8a8] text-sm mt-1">As soon as the channels finish loading, shelves will appear here.</p>
                 </div>
-              )}
+              </div>
             </div>
-          </div>
+          )}
 
           <div className="border-t lg:border-t-0 lg:border-l border-[#252525] bg-[#121212] p-5 md:p-6">
             <div className="flex items-center justify-between gap-3 mb-4">

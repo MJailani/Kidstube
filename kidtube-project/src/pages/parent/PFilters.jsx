@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import Spinner from '../../components/Spinner';
 import { IcKey, IcPlus, IcX } from '../../icons';
@@ -32,6 +32,8 @@ export default function PFilters() {
     profileError,
     selectProfile,
     addProfile,
+    renameProfile,
+    removeProfile,
     setProfileFilter,
     addProfileKeyword,
     removeProfileKeyword,
@@ -45,7 +47,14 @@ export default function PFilters() {
   const [saved, setSaved] = useState(false);
   const [newProfileName, setNewProfileName] = useState('');
   const [addingProfile, setAddingProfile] = useState(false);
+  const [profileNameDraft, setProfileNameDraft] = useState('');
+  const [renamingProfile, setRenamingProfile] = useState(false);
+  const [deletingProfile, setDeletingProfile] = useState(false);
   const [profileMsg, setProfileMsg] = useState('');
+
+  useEffect(() => {
+    setProfileNameDraft(activeProfile?.name || '');
+  }, [activeProfile]);
 
   function flash() {
     setSaved(true);
@@ -85,6 +94,56 @@ export default function PFilters() {
       setProfileMsg(error.message || 'Could not create profile.');
     } finally {
       setAddingProfile(false);
+    }
+  }
+
+  async function handleRenameProfile() {
+    if (!activeProfile) {
+      return;
+    }
+
+    if (!profileNameDraft.trim()) {
+      setProfileMsg('Enter a profile name first.');
+      return;
+    }
+
+    if (profileNameDraft.trim() === activeProfile.name) {
+      setProfileMsg('That profile name is already in use.');
+      return;
+    }
+
+    try {
+      setRenamingProfile(true);
+      setProfileMsg('');
+      await renameProfile(activeProfile.id, profileNameDraft);
+      setProfileMsg('Profile renamed.');
+    } catch (error) {
+      setProfileMsg(error.message || 'Could not rename profile.');
+    } finally {
+      setRenamingProfile(false);
+    }
+  }
+
+  async function handleDeleteProfile() {
+    if (!activeProfile || profiles.length <= 1) {
+      setProfileMsg('At least one child profile is required.');
+      return;
+    }
+
+    const confirmed = window.confirm(`Delete ${activeProfile.name}? This will remove its filters, requests, parent picks, and watch history.`);
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      setDeletingProfile(true);
+      setProfileMsg('');
+      await removeProfile(activeProfile.id);
+      setProfileMsg('Profile deleted.');
+    } catch (error) {
+      setProfileMsg(error.message || 'Could not delete profile.');
+    } finally {
+      setDeletingProfile(false);
     }
   }
 
@@ -151,9 +210,37 @@ export default function PFilters() {
               </div>
 
               {activeProfile && (
-                <p className="text-[#9ca3af] text-xs mt-3">
-                  Active profile: <span className="text-white font-medium">{activeProfile.name}</span>
-                </p>
+                <div className="mt-4 rounded-xl border border-[#374151] bg-[#111827] p-3">
+                  <p className="text-[#9ca3af] text-xs uppercase tracking-[0.16em] mb-2">Manage Active Profile</p>
+                  <p className="text-[#9ca3af] text-xs mb-3">
+                    Active profile: <span className="text-white font-medium">{activeProfile.name}</span>
+                  </p>
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <input
+                      value={profileNameDraft}
+                      onChange={(event) => setProfileNameDraft(event.target.value)}
+                      placeholder="Rename child profile"
+                      className="flex-1 bg-[#0b1220] border border-[#374151] text-white placeholder-[#4b5563] px-3 py-2 rounded-lg text-sm outline-none focus:border-blue-500"
+                    />
+                    <button
+                      onClick={handleRenameProfile}
+                      disabled={renamingProfile || deletingProfile}
+                      className="bg-slate-200 hover:bg-white disabled:opacity-60 text-black px-4 py-2 rounded-lg text-sm transition-colors whitespace-nowrap inline-flex items-center justify-center"
+                    >
+                      {renamingProfile ? <Spinner size={14} /> : 'Rename'}
+                    </button>
+                    <button
+                      onClick={handleDeleteProfile}
+                      disabled={deletingProfile || renamingProfile || profiles.length <= 1}
+                      className="bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white px-4 py-2 rounded-lg text-sm transition-colors whitespace-nowrap inline-flex items-center justify-center"
+                    >
+                      {deletingProfile ? <Spinner size={14} /> : 'Delete'}
+                    </button>
+                  </div>
+                  {profiles.length <= 1 && (
+                    <p className="text-[#6b7280] text-xs mt-2">Create another profile before deleting this one.</p>
+                  )}
+                </div>
               )}
               {(profileMsg || profileError) && (
                 <p className={`text-xs mt-2 ${profileError ? 'text-red-400' : 'text-green-400'}`}>

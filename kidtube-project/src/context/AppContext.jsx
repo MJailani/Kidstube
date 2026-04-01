@@ -7,6 +7,7 @@ import {
   clearProfileWatchHistory,
   createChildProfile,
   createUnlockRequest,
+  deleteChildProfile,
   deleteCustomChannel,
   denyUnlockRequest,
   disableProfileChannel,
@@ -15,6 +16,7 @@ import {
   getProfileBundle,
   logProfileWatch,
   pinProfileVideo,
+  renameChildProfile,
   replaceProfileKeywords,
   unpinProfileVideo,
   updateProfileFilters,
@@ -430,6 +432,35 @@ export function AppProvider({ children }) {
     return profile;
   }
 
+  async function renameProfile(profileId, name) {
+    if (!HAS_SUPABASE_CONFIG || !authUser) {
+      throw new Error('Supabase profiles are not available.');
+    }
+
+    const updated = await renameChildProfile(profileId, name);
+    setProfiles((current) => current.map((profile) => (
+      profile.id === updated.id
+        ? { ...profile, ...updated }
+        : profile
+    )));
+    return updated;
+  }
+
+  async function removeProfile(profileId) {
+    if (!HAS_SUPABASE_CONFIG || !authUser) {
+      throw new Error('Supabase profiles are not available.');
+    }
+
+    const result = await deleteChildProfile(profileId);
+    setProfiles((current) => current.filter((profile) => profile.id !== profileId));
+
+    if (activeProfileId === profileId) {
+      setActiveProfileId(result.fallbackProfileId || '');
+    }
+
+    return result;
+  }
+
   async function setProfileFilter(key, value) {
     if (!HAS_SUPABASE_CONFIG || !activeProfileId) {
       d({ t: 'SET_F', k: key, v: value });
@@ -664,6 +695,8 @@ export function AppProvider({ children }) {
         profileError,
         selectProfile,
         addProfile,
+        renameProfile,
+        removeProfile,
         setProfileFilter,
         addProfileKeyword,
         removeProfileKeyword,

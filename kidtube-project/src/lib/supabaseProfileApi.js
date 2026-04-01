@@ -129,6 +129,63 @@ export async function createChildProfile({ name, avatarColor = '#ff0000', isDefa
   return data;
 }
 
+export async function renameChildProfile(profileId, name) {
+  requireSupabase();
+  const trimmed = name.trim();
+  if (!trimmed) {
+    throw new Error('Enter a profile name.');
+  }
+
+  const { data, error } = await supabase
+    .from('child_profiles')
+    .update({ name: trimmed })
+    .eq('id', profileId)
+    .select('id, name, avatar_color, is_default, created_at')
+    .single();
+
+  if (error) throw error;
+  return data;
+}
+
+export async function deleteChildProfile(profileId) {
+  requireSupabase();
+
+  const profiles = await listChildProfiles();
+  if (profiles.length <= 1) {
+    throw new Error('At least one child profile is required.');
+  }
+
+  const profile = profiles.find((entry) => entry.id === profileId);
+  if (!profile) {
+    throw new Error('Profile not found.');
+  }
+
+  const fallbackProfile =
+    profiles.find((entry) => entry.id !== profileId && entry.is_default) ||
+    profiles.find((entry) => entry.id !== profileId);
+
+  const { error: deleteError } = await supabase
+    .from('child_profiles')
+    .delete()
+    .eq('id', profileId);
+
+  if (deleteError) throw deleteError;
+
+  if (profile.is_default && fallbackProfile) {
+    const { error: promoteError } = await supabase
+      .from('child_profiles')
+      .update({ is_default: true })
+      .eq('id', fallbackProfile.id);
+
+    if (promoteError) throw promoteError;
+  }
+
+  return {
+    deletedId: profileId,
+    fallbackProfileId: fallbackProfile?.id || '',
+  };
+}
+
 export async function ensureInitialChildProfile() {
   const profiles = await listChildProfiles();
   if (profiles.length > 0) {
