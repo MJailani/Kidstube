@@ -187,6 +187,49 @@ async function fetchVideoById(input) {
   };
 }
 
+async function searchChannels(query, maxResults=6) {
+  const sr = await fetch(`https://www.googleapis.com/youtube/v3/search?part=snippet&type=channel&q=${encodeURIComponent(query)}&maxResults=${maxResults}&key=${API_KEY}`);
+  const sd = await sr.json();
+  if (sd.error) throw new Error(sd.error.message);
+  if (!sd.items?.length) return [];
+  // Batch-fetch subscriber counts + custom handles
+  const ids = sd.items.map(i => i.id.channelId).join(',');
+  const cr = await fetch(`https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics&id=${ids}&key=${API_KEY}`);
+  const cd = await cr.json();
+  const info = {};
+  (cd.items||[]).forEach(ch => {
+    info[ch.id] = { subs: fmtViews(parseInt(ch.statistics?.subscriberCount||'0')), handle: ch.snippet.customUrl||'' };
+  });
+  return sd.items.map(item => {
+    const id = item.id.channelId;
+    return { id, name:item.snippet.title, handle:info[id]?.handle||'', subscribers:info[id]?.subs||'',
+      color:channelColor(id), category:'Family',
+      thumb:item.snippet.thumbnails?.medium?.url||item.snippet.thumbnails?.default?.url||'',
+      desc:item.snippet.description||'', builtin:false };
+  });
+}
+
+async function searchVideos(query, maxResults=8) {
+  const sr = await fetch(`https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&q=${encodeURIComponent(query)}&maxResults=${maxResults}&key=${API_KEY}`);
+  const sd = await sr.json();
+  if (sd.error) throw new Error(sd.error.message);
+  if (!sd.items?.length) return [];
+  const ids = sd.items.map(i => i.id.videoId).join(',');
+  const vr = await fetch(`https://www.googleapis.com/youtube/v3/videos?part=snippet,contentDetails,statistics&id=${ids}&key=${API_KEY}`);
+  const vd = await vr.json();
+  if (vd.error) throw new Error(vd.error.message);
+  return (vd.items||[]).map(item => {
+    const secs = parseDuration(item.contentDetails.duration);
+    const title = item.snippet.title;
+    return { id:item.id, ch:item.snippet.channelId, yt:item.id, title,
+      thumb:item.snippet.thumbnails?.medium?.url||item.snippet.thumbnails?.high?.url||item.snippet.thumbnails?.default?.url||'',
+      dur:fmtDur(secs), secs, views:fmtViews(parseInt(item.statistics?.viewCount||'0'))+' views',
+      date:(item.snippet.publishedAt||'').split('T')[0], desc:(item.snippet.description||'').slice(0,300),
+      short:secs<=61||title.toLowerCase().includes('#shorts'),
+      tags:(item.snippet.tags||[]).slice(0,5), chName:item.snippet.channelTitle, pinned:true };
+  });
+}
+
 // Merge built-in + custom channels
 function getAllChannels(s) {
   const custom = s.customChannels || [];
@@ -721,80 +764,118 @@ function PDash() {
 // ── PARENT CHANNELS ───────────────────────────────────────────────────────────
 function PChannels() {
   const {s, d} = useApp();
-  const [q, setQ] = useState('');
+  const [filterQ, setFilterQ] = useState('');
   const [showAdd, setShowAdd] = useState(false);
-  const [addInput, setAddInput] = useState('');
-  const [addLoading, setAddLoading] = useState(false);
-  const [addPreview, setAddPreview] = useState(null);
-  const [addErr, setAddErr] = useState('');
+  const [searchQ, setSearchQ] = useState('');
+  const [searching, setSearching] = useState(false);
+  const [results, setResults] = useState(null); // null=not searched, []= no results, [...]= results
+  const [searchErr, setSearchErr] = useState('');
+  const [added, setAdded] = useState({}); // id → true, tracks just-added in this session
   const allChs = getAllChannels(s);
-  const list = allChs.filter(c => c.name.toLowerCase().includes(q.toLowerCase()) || c.category.toLowerCase().includes(q.toLowerCase()));
+  const list = allChs.filter(c =>
+    c.name.toLowerCase().includes(filterQ.toLowerCase()) ||
+    c.category.toLowerCase().includes(filterQ.toLowerCase())
+  );
 
-  async function lookup() {
-    if (!addInput.trim()) return;
-    setAddLoading(true); setAddErr(''); setAddPreview(null);
+  async function doSearch() {
+    const q = searchQ.trim();
+    if (!q) return;
+    setSearching(true); setSearchErr(''); setResults(null);
     try {
-      const ch = await resolveChannel(addInput);
-      if (allChs.find(x => x.id === ch.id)) { setAddErr('This channel is already in your list.'); }
-      else { setAddPreview(ch); }
-    } catch(e) { setAddErr(e.message||'Could not find channel'); }
-    finally { setAddLoading(false); }
+      // If it looks like a URL or handle, resolve directly; otherwise search
+      let res;
+      if (q.includes('youtube.com') || /^UC[\w-]{21,22}$/.test(q) || q.startsWith('@')) {
+        const ch = await resolveChannel(q);
+        res = [ch];
+      } else {
+        res = await searchChannels(q);
+      }
+      setResults(res);
+      if (!res.length) setSearchErr('No channels found. Try different keywords.');
+    } catch(e) { setSearchErr(e.message||'Search failed'); setResults([]); }
+    finally { setSearching(false); }
   }
-  function confirmAdd() {
-    if (!addPreview) return;
-    d({t:'ADD_CH', ch:addPreview});
-    setAddPreview(null); setAddInput(''); setShowAdd(false); setAddErr('');
+
+  function addChannel(ch) {
+    if (allChs.find(x => x.id === ch.id)) return;
+    d({t:'ADD_CH', ch});
+    setAdded(prev => ({...prev, [ch.id]: true}));
   }
-  function cancelAdd() { setShowAdd(false); setAddInput(''); setAddPreview(null); setAddErr(''); }
+
+  function closeAdd() { setShowAdd(false); setSearchQ(''); setResults(null); setSearchErr(''); setAdded({}); }
 
   return (
     <div>
       <div className="flex items-center justify-between mb-1">
         <h2 className="text-white text-xl font-bold">Channel Whitelist</h2>
-        <button onClick={()=>setShowAdd(v=>!v)}
-          className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm px-3 py-1.5 rounded-lg transition-colors">
-          <IcPlus size={14}/>{showAdd?'Cancel':'Add Channel'}
+        <button onClick={() => showAdd ? closeAdd() : setShowAdd(true)}
+          className={`flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg transition-colors ${showAdd ? 'bg-[#374151] text-[#9ca3af]' : 'bg-blue-600 hover:bg-blue-700 text-white'}`}>
+          {showAdd ? <><IcX size={14}/>Close</> : <><IcPlus size={14}/>Add Channel</>}
         </button>
       </div>
       <p className="text-[#6b7280] text-sm mb-4">Only enabled channels appear for your kids.</p>
 
-      {/* ── ADD CHANNEL PANEL ── */}
+      {/* ── ADD CHANNEL SEARCH PANEL ── */}
       {showAdd && (
         <div className="bg-[#1f2937] border border-blue-700 rounded-xl p-4 mb-5">
-          <h3 className="text-white font-semibold text-sm mb-3 flex items-center gap-2"><IcLink size={14} cls="text-blue-400"/>Add a New Channel</h3>
-          <p className="text-[#6b7280] text-xs mb-3">Paste a YouTube channel URL or @handle. Examples:<br/><code className="text-[#9ca3af]">https://www.youtube.com/@SciShowKids</code> or <code className="text-[#9ca3af]">@SciShowKids</code></p>
-          <div className="flex gap-2 mb-3">
-            <input value={addInput} onChange={e=>{setAddInput(e.target.value);setAddErr('');setAddPreview(null);}}
-              onKeyDown={e=>e.key==='Enter'&&lookup()}
-              placeholder="https://www.youtube.com/@ChannelName"
-              className="flex-1 bg-[#111827] border border-[#374151] text-white placeholder-[#4b5563] px-3 py-2 rounded-lg text-sm outline-none focus:border-blue-500"/>
-            <button onClick={lookup} disabled={addLoading||!addInput.trim()}
-              className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white px-4 py-2 rounded-lg text-sm transition-colors flex items-center gap-2">
-              {addLoading ? <Spinner size={14}/> : <IcSearch size={14}/>}{addLoading?'Searching…':'Look up'}
+          <h3 className="text-white font-semibold text-sm mb-3 flex items-center gap-2">
+            <IcSearch size={14} cls="text-blue-400"/>Search for a Channel
+          </h3>
+          <div className="flex gap-2 mb-1">
+            <input value={searchQ}
+              onChange={e => { setSearchQ(e.target.value); setSearchErr(''); }}
+              onKeyDown={e => e.key==='Enter' && doSearch()}
+              placeholder="e.g. SciShow Kids, @NatGeoKids, or paste a channel URL…"
+              className="flex-1 bg-[#111827] border border-[#374151] text-white placeholder-[#4b5563] px-3 py-2.5 rounded-lg text-sm outline-none focus:border-blue-500"/>
+            <button onClick={doSearch} disabled={searching || !searchQ.trim()}
+              className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white px-4 py-2 rounded-lg text-sm transition-colors flex items-center gap-2 whitespace-nowrap">
+              {searching ? <><Spinner size={14}/>Searching…</> : <><IcSearch size={14}/>Search</>}
             </button>
           </div>
-          {addErr && <p className="text-red-400 text-xs mb-3 flex items-center gap-1"><IcXcirc size={12}/>{addErr}</p>}
-          {addPreview && (
-            <div className="bg-[#111827] border border-green-700 rounded-xl p-3 flex items-center gap-3">
-              <div className="w-14 h-14 rounded-xl overflow-hidden flex-shrink-0 flex items-center justify-center text-white text-xl font-bold" style={{background:addPreview.color}}>
-                {addPreview.thumb ? <img src={addPreview.thumb} alt="" className="w-full h-full object-cover"/> : addPreview.name[0]}
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-white font-semibold text-sm">{addPreview.name}</p>
-                <p className="text-[#6b7280] text-xs">{addPreview.handle} · {addPreview.subscribers} subscribers</p>
-              </div>
-              <div className="flex gap-2">
-                <button onClick={confirmAdd} className="flex items-center gap-1 bg-green-700 hover:bg-green-600 text-white text-xs px-3 py-1.5 rounded-lg"><IcOk size={12}/>Add</button>
-                <button onClick={()=>setAddPreview(null)} className="text-[#6b7280] hover:text-white text-xs px-2 py-1.5 rounded-lg hover:bg-[#374151]"><IcX size={12}/></button>
-              </div>
+          <p className="text-[#4b5563] text-xs mb-3">Search by name, topic, or paste a YouTube channel URL / @handle</p>
+
+          {searchErr && <p className="text-red-400 text-xs mb-3 flex items-center gap-1"><IcXcirc size={12}/>{searchErr}</p>}
+
+          {results && results.length > 0 && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
+              {results.map(ch => {
+                const alreadyHave = !!allChs.find(x => x.id === ch.id);
+                const justAdded = added[ch.id];
+                return (
+                  <div key={ch.id} className="bg-[#111827] border border-[#374151] rounded-xl p-3 flex items-center gap-3">
+                    <div className="w-12 h-12 rounded-xl overflow-hidden flex-shrink-0 flex items-center justify-center text-white text-lg font-bold" style={{background:ch.color}}>
+                      {ch.thumb ? <img src={ch.thumb} alt="" className="w-full h-full object-cover" onError={e=>{e.target.style.display='none';}}/> : ch.name[0]}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-white text-sm font-medium truncate">{ch.name}</p>
+                      <p className="text-[#6b7280] text-xs truncate">{ch.handle}{ch.subscribers ? ` · ${ch.subscribers} subs` : ''}</p>
+                      {ch.desc && <p className="text-[#4b5563] text-xs clamp1 mt-0.5">{ch.desc}</p>}
+                    </div>
+                    <div className="flex-shrink-0">
+                      {alreadyHave || justAdded ? (
+                        <span className="flex items-center gap-1 text-green-400 text-xs px-2 py-1"><IcOk size={12}/>Added</span>
+                      ) : (
+                        <button onClick={() => addChannel(ch)}
+                          className="flex items-center gap-1 bg-blue-600 hover:bg-blue-700 text-white text-xs px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap">
+                          <IcPlus size={12}/>Add
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
+          )}
+          {results && results.length === 0 && !searchErr && (
+            <p className="text-[#6b7280] text-sm text-center py-4">No results found.</p>
           )}
         </div>
       )}
 
+      {/* ── EXISTING CHANNELS LIST ── */}
       <div className="relative mb-4">
         <IcSearch size={16} cls="absolute left-3 top-1/2 -translate-y-1/2 text-[#6b7280]"/>
-        <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search channels…"
+        <input value={filterQ} onChange={e=>setFilterQ(e.target.value)} placeholder="Filter your channels…"
           className="w-full bg-[#1f2937] border border-[#374151] text-white placeholder-[#6b7280] pl-9 pr-4 py-2.5 rounded-xl text-sm outline-none focus:border-blue-500"/>
       </div>
       <p className="text-[#6b7280] text-xs mb-3">{s.wl.length} of {allChs.length} enabled</p>
@@ -815,7 +896,7 @@ function PChannels() {
                     <p className="text-white text-sm font-medium truncate">{ch.name}</p>
                     {!ch.builtin && <span className="text-[10px] bg-blue-900 text-blue-300 px-1.5 py-0.5 rounded-full flex-shrink-0">Custom</span>}
                   </div>
-                  <p className="text-[#6b7280] text-xs">{ch.subscribers} · {ch.category}</p>
+                  <p className="text-[#6b7280] text-xs">{ch.subscribers}{ch.subscribers?' · ':''}{ch.category}</p>
                   <div className="flex gap-3 mt-1">
                     {isLoading ? <span className="text-[#6b7280] text-xs flex items-center gap-1"><Spinner size={10}/>Loading…</span>
                       : <span className="text-green-400 text-xs">{allowed.length} available</span>}
@@ -826,8 +907,7 @@ function PChannels() {
               <div className="flex items-center gap-2 flex-shrink-0">
                 {!ch.builtin && (
                   <button onClick={()=>d({t:'DEL_CH',id:ch.id})}
-                    className="p-1.5 text-[#6b7280] hover:text-red-400 hover:bg-[#374151] rounded-lg transition-colors"
-                    title="Remove channel">
+                    className="p-1.5 text-[#6b7280] hover:text-red-400 hover:bg-[#374151] rounded-lg transition-colors" title="Remove channel">
                     <IcTrash size={14}/>
                   </button>
                 )}
@@ -846,89 +926,134 @@ function PChannels() {
 // ── PARENT VIDEOS ─────────────────────────────────────────────────────────────
 function PVideos() {
   const {s, d} = useApp();
-  const [input, setInput] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [preview, setPreview] = useState(null);
-  const [err, setErr] = useState('');
+  const [searchQ, setSearchQ] = useState('');
+  const [searching, setSearching] = useState(false);
+  const [results, setResults] = useState(null);
+  const [searchErr, setSearchErr] = useState('');
+  const [pinned_now, setPinnedNow] = useState({}); // tracks ids pinned this session
   const pinned = s.pinned || [];
 
-  async function lookup() {
-    if (!input.trim()) return;
-    setLoading(true); setErr(''); setPreview(null);
+  async function doSearch() {
+    const q = searchQ.trim();
+    if (!q) return;
+    setSearching(true); setSearchErr(''); setResults(null);
     try {
-      const v = await fetchVideoById(input);
-      if (pinned.find(x => x.id === v.id)) { setErr('This video is already pinned.'); }
-      else { setPreview(v); }
-    } catch(e) { setErr(e.message||'Could not find video'); }
-    finally { setLoading(false); }
+      let res;
+      // If it looks like a video URL/ID, fetch directly
+      const urlMatch = q.match(/(?:v=|youtu\.be\/|embed\/)([\w-]{11})/);
+      const bareId = /^[\w-]{11}$/.test(q);
+      if (urlMatch || bareId) {
+        const v = await fetchVideoById(q);
+        res = [v];
+      } else {
+        res = await searchVideos(q);
+      }
+      setResults(res);
+      if (!res.length) setSearchErr('No videos found. Try different keywords.');
+    } catch(e) { setSearchErr(e.message||'Search failed'); setResults([]); }
+    finally { setSearching(false); }
   }
-  function confirmAdd() {
-    if (!preview) return;
-    d({t:'ADD_PIN', v:preview});
-    setPreview(null); setInput(''); setErr('');
+
+  function pinVideo(v) {
+    if (pinned.find(x => x.id === v.id)) return;
+    d({t:'ADD_PIN', v});
+    setPinnedNow(prev => ({...prev, [v.id]: true}));
   }
 
   return (
     <div>
       <h2 className="text-white text-xl font-bold mb-1">Parent's Picks</h2>
-      <p className="text-[#6b7280] text-sm mb-5">Pin specific videos that always appear for your kids, bypassing channel and filter rules.</p>
+      <p className="text-[#6b7280] text-sm mb-5">Search for videos to pin for your kids — they appear in a special row on the home screen, bypassing all filters.</p>
 
-      {/* Add video panel */}
+      {/* Search panel */}
       <div className="bg-[#1f2937] rounded-xl p-4 mb-6">
-        <h3 className="text-white font-semibold text-sm mb-2 flex items-center gap-2"><IcLink size={14} cls="text-blue-400"/>Add a Video by URL</h3>
-        <p className="text-[#6b7280] text-xs mb-3">Paste any YouTube video URL or video ID.<br/><code className="text-[#9ca3af]">https://www.youtube.com/watch?v=dQw4w9WgXcQ</code></p>
-        <div className="flex gap-2 mb-3">
-          <input value={input} onChange={e=>{setInput(e.target.value);setErr('');setPreview(null);}}
-            onKeyDown={e=>e.key==='Enter'&&lookup()}
-            placeholder="https://www.youtube.com/watch?v=…"
-            className="flex-1 bg-[#111827] border border-[#374151] text-white placeholder-[#4b5563] px-3 py-2 rounded-lg text-sm outline-none focus:border-blue-500"/>
-          <button onClick={lookup} disabled={loading||!input.trim()}
-            className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white px-4 py-2 rounded-lg text-sm transition-colors flex items-center gap-2">
-            {loading ? <Spinner size={14}/> : <IcSearch size={14}/>}{loading?'Loading…':'Look up'}
+        <h3 className="text-white font-semibold text-sm mb-3 flex items-center gap-2">
+          <IcSearch size={14} cls="text-blue-400"/>Search for a Video
+        </h3>
+        <div className="flex gap-2 mb-1">
+          <input value={searchQ}
+            onChange={e => { setSearchQ(e.target.value); setSearchErr(''); }}
+            onKeyDown={e => e.key==='Enter' && doSearch()}
+            placeholder="e.g. Baby Shark, dinosaur songs for kids, or paste a video URL…"
+            className="flex-1 bg-[#111827] border border-[#374151] text-white placeholder-[#4b5563] px-3 py-2.5 rounded-lg text-sm outline-none focus:border-blue-500"/>
+          <button onClick={doSearch} disabled={searching || !searchQ.trim()}
+            className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white px-4 py-2 rounded-lg text-sm transition-colors flex items-center gap-2 whitespace-nowrap">
+            {searching ? <><Spinner size={14}/>Searching…</> : <><IcSearch size={14}/>Search</>}
           </button>
         </div>
-        {err && <p className="text-red-400 text-xs mb-3 flex items-center gap-1"><IcXcirc size={12}/>{err}</p>}
-        {preview && (
-          <div className="bg-[#111827] border border-green-700 rounded-xl p-3 flex gap-3">
-            <div className="flex-shrink-0 w-28">
-              <div className="thumb rounded-lg"><img src={preview.thumb} alt={preview.title}/><span className="dur">{preview.dur}</span></div>
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-white font-medium text-sm clamp2">{preview.title}</p>
-              <p className="text-[#6b7280] text-xs mt-1">{preview.chName}</p>
-              <p className="text-[#6b7280] text-xs">{preview.views} · {preview.date}</p>
-              <div className="flex gap-2 mt-2">
-                <button onClick={confirmAdd} className="flex items-center gap-1 bg-green-700 hover:bg-green-600 text-white text-xs px-3 py-1.5 rounded-lg"><IcOk size={12}/>Pin this video</button>
-                <button onClick={()=>setPreview(null)} className="text-[#6b7280] hover:text-white text-xs px-2 py-1.5 rounded-lg hover:bg-[#374151]"><IcX size={12}/></button>
-              </div>
-            </div>
+        <p className="text-[#4b5563] text-xs mb-3">Search by title/topic or paste a YouTube video URL</p>
+
+        {searchErr && <p className="text-red-400 text-xs mb-2 flex items-center gap-1"><IcXcirc size={12}/>{searchErr}</p>}
+
+        {results && results.length > 0 && (
+          <div className="flex flex-col gap-2 mt-2">
+            {results.map(v => {
+              const alreadyPinned = !!pinned.find(x => x.id === v.id) || pinned_now[v.id];
+              return (
+                <div key={v.id} className="bg-[#111827] border border-[#374151] rounded-xl p-3 flex gap-3 items-center">
+                  <div className="flex-shrink-0 w-24 sm:w-32">
+                    <div className="thumb rounded-lg">
+                      <img src={v.thumb} alt={v.title} onError={e=>{e.target.onerror=null;e.target.src=`https://i.ytimg.com/vi/${v.yt}/mqdefault.jpg`;}}/>
+                      <span className="dur">{v.dur}</span>
+                    </div>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-white text-sm font-medium clamp2 leading-snug">{v.title}</p>
+                    <p className="text-[#6b7280] text-xs mt-0.5">{v.chName}</p>
+                    <p className="text-[#6b7280] text-xs">{v.views} · {v.date}</p>
+                    {v.short && <span className="inline-block mt-1 text-[10px] bg-orange-900 text-orange-300 px-1.5 py-0.5 rounded-full">Short</span>}
+                  </div>
+                  <div className="flex-shrink-0">
+                    {alreadyPinned ? (
+                      <span className="flex items-center gap-1 text-yellow-400 text-xs px-2 py-1"><IcStar size={12}/>Pinned</span>
+                    ) : (
+                      <button onClick={() => pinVideo(v)}
+                        className="flex items-center gap-1 bg-yellow-600 hover:bg-yellow-500 text-white text-xs px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap">
+                        <IcStar size={12}/>Pin
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
           </div>
+        )}
+        {results && results.length === 0 && !searchErr && (
+          <p className="text-[#6b7280] text-sm text-center py-4">No results found.</p>
         )}
       </div>
 
       {/* Pinned list */}
+      <h3 className="text-white font-semibold text-sm mb-3 flex items-center gap-2">
+        <IcStar size={14} cls="text-yellow-400"/>Pinned Videos ({pinned.length})
+      </h3>
       {!pinned.length ? (
-        <div className="text-center py-16 text-[#6b7280]">
-          <IcStar size={40} cls="mx-auto mb-3 opacity-40"/>
+        <div className="text-center py-10 text-[#6b7280] bg-[#1f2937] rounded-xl">
+          <IcStar size={36} cls="mx-auto mb-3 opacity-30"/>
           <p className="text-white font-medium mb-1">No pinned videos yet</p>
-          <p className="text-sm">Add videos above and they'll appear in a "Parent's Picks" section for kids.</p>
+          <p className="text-sm">Search above and pin videos for your kids.</p>
         </div>
       ) : (
-        <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-2">
           {pinned.map(v => (
             <div key={v.id} className="bg-[#1f2937] rounded-xl p-3 flex gap-3 items-center">
-              <div className="flex-shrink-0 w-28">
-                <div className="thumb rounded-lg"><img src={v.thumb} alt={v.title} onError={e=>e.target.style.display='none'}/><span className="dur">{v.dur}</span></div>
+              <div className="flex-shrink-0 w-24 sm:w-32">
+                <div className="thumb rounded-lg">
+                  <img src={v.thumb} alt={v.title} onError={e=>e.target.style.display='none'}/>
+                  <span className="dur">{v.dur}</span>
+                </div>
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-white font-medium text-sm clamp2">{v.title}</p>
                 <p className="text-[#6b7280] text-xs mt-0.5">{v.chName}</p>
                 <p className="text-[#6b7280] text-xs">{v.views} · {v.date}</p>
-                <a href={`https://www.youtube.com/watch?v=${v.yt}`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-blue-400 text-xs mt-1 hover:text-blue-300">
+                <a href={`https://www.youtube.com/watch?v=${v.yt}`} target="_blank" rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-blue-400 text-xs mt-1 hover:text-blue-300">
                   <IcLink size={10}/>View on YouTube
                 </a>
               </div>
-              <button onClick={()=>d({t:'DEL_PIN',id:v.id})} className="p-2 text-[#6b7280] hover:text-red-400 hover:bg-[#374151] rounded-lg transition-colors flex-shrink-0" title="Remove">
+              <button onClick={()=>d({t:'DEL_PIN',id:v.id})}
+                className="p-2 text-[#6b7280] hover:text-red-400 hover:bg-[#374151] rounded-lg transition-colors flex-shrink-0" title="Remove">
                 <IcTrash size={16}/>
               </button>
             </div>
@@ -937,7 +1062,7 @@ function PVideos() {
       )}
       <div className="mt-5 bg-[#1e3a5f] border border-blue-800 rounded-xl p-4 text-xs text-blue-400">
         <p className="text-blue-300 font-semibold mb-1">How pinned videos work</p>
-        Pinned videos bypass all filters and appear in the "Parent's Picks" row on the home screen. They work even if the video's channel is not whitelisted.
+        Pinned videos bypass all filters and appear in a "Parent's Picks" row on the kids' home screen — even if the channel isn't whitelisted.
       </div>
     </div>
   );
