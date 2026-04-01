@@ -7,6 +7,12 @@ import VCard from '../../components/VCard';
 import Spinner from '../../components/Spinner';
 import LoadingGrid from '../../components/LoadingGrid';
 
+function scrollToSection(sectionId) {
+  const target = document.getElementById(sectionId);
+  if (!target) return;
+  target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
 function parseViews(label) {
   if (!label) return 0;
   const match = String(label).match(/([\d.]+)\s*([KMB])?/i);
@@ -31,11 +37,11 @@ function uniqueVideos(videos) {
   });
 }
 
-function HomeShelf({ title, subtitle, videos, accent = 'bg-red-500' }) {
+function HomeShelf({ title, subtitle, videos, accent = 'bg-red-500', sectionId }) {
   if (!videos.length) return null;
 
   return (
-    <section className="mb-10">
+    <section id={sectionId} className="mb-10 scroll-mt-24">
       <div className="flex items-end justify-between gap-3 mb-4">
         <div>
           <h2 className="text-lg font-bold flex items-center gap-2">
@@ -135,14 +141,15 @@ export default function KidHome() {
   ]).filter((video) => video.id !== featured?.id).slice(0, 4);
 
   const chips = [
-    { label: 'All', value: allAllowed.length },
-    { label: 'Parent Picks', value: pinned.length },
-    { label: 'Fresh', value: recent.slice(0, 12).length },
-    { label: 'Popular', value: popular.slice(0, 12).length },
-    { label: 'Longer Videos', value: longerVideos.length },
+    { label: 'All', value: allAllowed.length, targetId: 'browse-channels' },
+    { label: 'Parent Picks', value: pinned.length, targetId: 'parents-picks' },
+    { label: 'Fresh', value: recent.slice(0, 12).length, targetId: 'fresh-uploads' },
+    { label: 'Popular', value: popular.slice(0, 12).length, targetId: 'popular-right-now' },
+    { label: 'Longer Videos', value: longerVideos.length, targetId: 'longer-watch-time' },
     ...whitelistedChannels.slice(0, 4).map((channel) => ({
       label: channel.category,
       value: channelRows.find((entry) => entry.channel.id === channel.id)?.allowed.length || 0,
+      targetId: `channel-shelf-${channel.id}`,
     })),
   ];
 
@@ -252,18 +259,20 @@ export default function KidHome() {
       <section className="mb-8">
         <div className="flex flex-wrap gap-2">
           {chips.map((chip, index) => (
-            <span
+            <button
               key={`${chip.label}-${index}`}
+              type="button"
+              onClick={() => scrollToSection(chip.targetId)}
               className={`rounded-full px-4 py-2 text-sm border ${index === 0 ? 'bg-white text-black border-white' : 'bg-[#1c1c1c] text-[#f1f1f1] border-[#303030]'}`}
             >
               {chip.label}
               <span className={`ml-2 text-xs ${index === 0 ? 'text-black/70' : 'text-[#aaaaaa]'}`}>{chip.value}</span>
-            </span>
+            </button>
           ))}
         </div>
       </section>
 
-      <section className="mb-10">
+      <section id="browse-channels" className="mb-10 scroll-mt-24">
         <div className="flex items-center justify-between gap-3 mb-4">
           <h2 className="text-lg font-bold flex items-center gap-2">
             <span className="w-1 h-5 bg-red-500 rounded-full inline-block" />
@@ -285,6 +294,7 @@ export default function KidHome() {
 
       {pinned.length > 0 && (
         <HomeShelf
+          sectionId="parents-picks"
           title="Parent's Picks"
           subtitle="Hand-picked videos that always stay easy to find."
           videos={pinned.slice(0, 10)}
@@ -304,12 +314,14 @@ export default function KidHome() {
       )}
 
       <HomeShelf
+        sectionId="fresh-uploads"
         title="Fresh Uploads"
         subtitle="The newest safe videos from your approved channels."
         videos={recent.slice(0, 12)}
       />
 
       <HomeShelf
+        sectionId="popular-right-now"
         title="Popular Right Now"
         subtitle="The biggest videos across your trusted channels."
         videos={popular.slice(0, 12)}
@@ -317,6 +329,7 @@ export default function KidHome() {
       />
 
       <HomeShelf
+        sectionId="longer-watch-time"
         title="Longer Watch Time"
         subtitle="Great when kids want something closer to a full episode."
         videos={longerVideos.slice(0, 12)}
@@ -328,6 +341,7 @@ export default function KidHome() {
         .map((entry) => (
           <HomeShelf
             key={entry.channel.id}
+            sectionId={`channel-shelf-${entry.channel.id}`}
             title={entry.channel.name}
             subtitle={`${entry.channel.category} videos from a trusted channel`}
             videos={entry.allowed.slice(0, 10)}

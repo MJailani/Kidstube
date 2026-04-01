@@ -17,6 +17,10 @@ export default function App() {
     if (path === '/parent' && s.authed) navigate('/parent/dashboard');
   }, [path, s.authed]);
 
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+  }, [path]);
+
   if (hasSupabaseAuth && !authReady) {
     return (
       <div className="min-h-screen bg-[#0f0f0f] flex items-center justify-center px-4">
