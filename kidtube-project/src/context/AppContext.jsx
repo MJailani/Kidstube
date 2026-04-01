@@ -4,6 +4,7 @@ import { fetchChannelVideos } from '../api';
 import { HAS_SUPABASE_CONFIG, supabase } from '../lib/supabase';
 import {
   approveUnlockRequest,
+  clearProfileWatchHistory,
   createChildProfile,
   createUnlockRequest,
   deleteCustomChannel,
@@ -12,7 +13,10 @@ import {
   enableProfileChannel,
   ensureInitialChildProfile,
   getProfileBundle,
+  logProfileWatch,
+  pinProfileVideo,
   replaceProfileKeywords,
+  unpinProfileVideo,
   updateProfileFilters,
 } from '../lib/supabaseProfileApi';
 
@@ -53,6 +57,16 @@ function reducer(s, a) {
         ...s,
         requests: a.requests || [],
         approved: a.approved || [],
+      };
+    case 'SET_PINNED_VIDEOS':
+      return {
+        ...s,
+        pinned: a.pinned || [],
+      };
+    case 'SET_HISTORY':
+      return {
+        ...s,
+        history: a.history || [],
       };
     case 'TOGGLE_CH':  { const w = s.wl; return { ...s, wl: w.includes(a.id) ? w.filter((x) => x !== a.id) : [...w, a.id] }; }
     case 'ADD_CH': {
@@ -107,6 +121,34 @@ function mapBundleToModeration(bundle) {
 
   const approved = (bundle.approvals || []).map((entry) => entry.video_id);
   return { requests, approved };
+}
+
+function mapPinnedVideos(bundle) {
+  return (bundle.pinned || []).map((video) => ({
+    id: video.video_id,
+    yt: video.youtube_id,
+    ch: video.channel_id,
+    chName: video.channel_name || '',
+    title: video.title,
+    thumb: video.thumb || '',
+    dur: video.duration_label || '0:00',
+    views: video.views_label || '0 views',
+    date: video.published_date || '',
+    desc: video.description || '',
+    pinned: true,
+  }));
+}
+
+function mapWatchHistory(bundle) {
+  return (bundle.history || []).map((entry) => ({
+    id: entry.video_id,
+    title: entry.title,
+    ch: entry.channel_id,
+    chName: entry.channel_name || '',
+    thumb: entry.thumb || '',
+    dur: entry.duration_label || '',
+    at: entry.watched_at,
+  }));
 }
 
 const Ctx = createContext(null);
@@ -271,6 +313,16 @@ export function AppProvider({ children }) {
         d({
           t: 'SET_PROFILE_MODERATION',
           ...mapBundleToModeration(bundle),
+        });
+
+        d({
+          t: 'SET_PINNED_VIDEOS',
+          pinned: mapPinnedVideos(bundle),
+        });
+
+        d({
+          t: 'SET_HISTORY',
+          history: mapWatchHistory(bundle),
         });
       } catch (error) {
         if (!cancelled) {
@@ -536,6 +588,63 @@ export function AppProvider({ children }) {
     });
   }
 
+  async function pinVideoForProfile(video) {
+    if (!HAS_SUPABASE_CONFIG || !activeProfileId) {
+      d({ t: 'ADD_PIN', v: video });
+      return;
+    }
+
+    await pinProfileVideo(activeProfileId, video);
+    const pinned = (s.pinned || []).find((entry) => entry.id === video.id)
+      ? s.pinned
+      : [{ ...video, pinned: true }, ...(s.pinned || [])];
+
+    d({
+      t: 'SET_PINNED_VIDEOS',
+      pinned,
+    });
+  }
+
+  async function unpinVideoForProfile(videoId) {
+    if (!HAS_SUPABASE_CONFIG || !activeProfileId) {
+      d({ t: 'DEL_PIN', id: videoId });
+      return;
+    }
+
+    await unpinProfileVideo(activeProfileId, videoId);
+    d({
+      t: 'SET_PINNED_VIDEOS',
+      pinned: (s.pinned || []).filter((entry) => entry.id !== videoId),
+    });
+  }
+
+  async function logWatchForProfile(entry) {
+    if (!HAS_SUPABASE_CONFIG || !activeProfileId) {
+      d({ t: 'LOG', e: entry });
+      return;
+    }
+
+    await logProfileWatch(activeProfileId, entry);
+    const nextEntry = { ...entry, at: new Date().toISOString() };
+    d({
+      t: 'SET_HISTORY',
+      history: [nextEntry, ...s.history.filter((historyEntry) => historyEntry.id !== nextEntry.id)].slice(0, 200),
+    });
+  }
+
+  async function clearWatchHistoryForProfile() {
+    if (!HAS_SUPABASE_CONFIG || !activeProfileId) {
+      d({ t: 'CLR_HIST' });
+      return;
+    }
+
+    await clearProfileWatchHistory(activeProfileId);
+    d({
+      t: 'SET_HISTORY',
+      history: [],
+    });
+  }
+
   return (
     <Ctx.Provider
       value={{
@@ -564,6 +673,10 @@ export function AppProvider({ children }) {
         requestVideoUnlock,
         approveVideoRequest,
         denyVideoRequest,
+        pinVideoForProfile,
+        unpinVideoForProfile,
+        logWatchForProfile,
+        clearWatchHistoryForProfile,
       }}
     >
       {children}

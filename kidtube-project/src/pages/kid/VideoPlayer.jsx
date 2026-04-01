@@ -16,7 +16,7 @@ function uniqueVideos(videos) {
 }
 
 export default function VideoPlayer({ vidId }) {
-  const { s, d } = useApp();
+  const { s, logWatchForProfile } = useApp();
   const allVideos = [...Object.values(s.videos).flat(), ...(s.pinned || [])];
   const video = allVideos.find((entry) => entry.id === vidId);
   const allChannels = getAllChannels(s);
@@ -27,19 +27,18 @@ export default function VideoPlayer({ vidId }) {
   useEffect(() => {
     if (video && allowed && !logged.current) {
       logged.current = true;
-      d({
-        t: 'LOG',
-        e: {
+      logWatchForProfile({
           id: video.id,
           title: video.title,
           ch: video.ch,
           chName: channel?.name || video.chName || '',
           thumb: video.thumb,
           dur: video.dur,
-        },
-      });
+        }).catch((error) => {
+          console.error('Could not log watch history', error);
+        });
     }
-  }, [allowed, channel, d, vidId, video]);
+  }, [allowed, channel, logWatchForProfile, vidId, video]);
 
   const related = useMemo(() => {
     if (!video) return [];

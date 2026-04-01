@@ -395,3 +395,67 @@ export async function denyUnlockRequest(profileId, requestId) {
 
   if (error) throw error;
 }
+
+function mapPinnedVideoPayload(profileId, video) {
+  return {
+    profile_id: profileId,
+    video_id: video.id,
+    youtube_id: video.yt || null,
+    title: video.title,
+    channel_id: video.ch || null,
+    channel_name: video.chName || null,
+    thumb: video.thumb || null,
+    duration_label: video.dur || null,
+    views_label: video.views || null,
+    published_date: video.date || null,
+    description: video.desc || null,
+  };
+}
+
+export async function pinProfileVideo(profileId, video) {
+  requireSupabase();
+  const { error } = await supabase
+    .from('pinned_videos')
+    .upsert(mapPinnedVideoPayload(profileId, video), { onConflict: 'profile_id,video_id' });
+
+  if (error) throw error;
+}
+
+export async function unpinProfileVideo(profileId, videoId) {
+  requireSupabase();
+  const { error } = await supabase
+    .from('pinned_videos')
+    .delete()
+    .eq('profile_id', profileId)
+    .eq('video_id', videoId);
+
+  if (error) throw error;
+}
+
+export async function logProfileWatch(profileId, entry) {
+  requireSupabase();
+
+  const payload = {
+    profile_id: profileId,
+    video_id: entry.id,
+    title: entry.title,
+    channel_id: entry.ch || null,
+    channel_name: entry.chName || null,
+    thumb: entry.thumb || null,
+    duration_label: entry.dur || null,
+    watched_at: new Date().toISOString(),
+  };
+
+  const { error } = await supabase.from('watch_history').insert(payload);
+  if (error) throw error;
+}
+
+export async function clearProfileWatchHistory(profileId) {
+  requireSupabase();
+  const { error } = await supabase
+    .from('watch_history')
+    .delete()
+    .eq('profile_id', profileId);
+
+  if (error) throw error;
+}

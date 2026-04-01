@@ -39,7 +39,7 @@ export default function PDash() {
           <p className="text-[#6b7280] text-xs uppercase tracking-[0.18em] mb-1">Active Child Profile</p>
           <p className="text-white font-semibold">{activeProfile.name}</p>
           <p className="text-[#9ca3af] text-sm mt-1">
-            Filters now load from Supabase for this profile. Channel lists, approvals, and history will be migrated next.
+            Filters, channels, approvals, parent picks, requests, and watch history now load from Supabase for this profile.
           </p>
         </div>
       )}
