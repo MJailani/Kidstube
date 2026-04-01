@@ -18,6 +18,8 @@ The frontend calls:
 
 `/api/youtube?action=...`
 `/api/feed?profileId=...`
+`/api/channel?profileId=...&channelId=...`
+`/api/watch?profileId=...&videoId=...`
 
 Supported actions:
 

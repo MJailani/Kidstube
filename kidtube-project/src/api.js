@@ -122,3 +122,11 @@ export async function searchVideos(query, maxResults = 8) {
 export async function fetchProfileFeed(profileId) {
   return proxyPathRequest('feed', { profileId });
 }
+
+export async function fetchProfileChannel(profileId, channelId) {
+  return proxyPathRequest('channel', { profileId, channelId });
+}
+
+export async function fetchProfileWatch(profileId, videoId) {
+  return proxyPathRequest('watch', { profileId, videoId });
+}

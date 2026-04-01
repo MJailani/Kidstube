@@ -1,5 +1,6 @@
+import { useEffect, useState } from 'react';
 import { useApp } from '../../context/AppContext';
-import { getAllChannels, fetchChannelVideos } from '../../api';
+import { getAllChannels, fetchChannelVideos, fetchProfileChannel } from '../../api';
 import { splitVideosByAccess } from '../../access';
 import { navigate } from '../../router';
 import VCard from '../../components/VCard';
@@ -9,8 +10,48 @@ import ErrBox from '../../components/ErrBox';
 import { IcLeft, IcLock } from '../../icons';
 
 export default function ChannelPage({ chId }) {
-  const { s, d, requestVideoUnlock } = useApp();
+  const { s, d, requestVideoUnlock, hasSupabaseAuth, activeProfileId } = useApp();
+  const [serverChannel, setServerChannel] = useState(null);
+  const [serverError, setServerError] = useState('');
+  const [serverLoading, setServerLoading] = useState(false);
   const ch = getAllChannels(s).find((channel) => channel.id === chId);
+
+  useEffect(() => {
+    if (!hasSupabaseAuth || !activeProfileId || !chId) {
+      setServerChannel(null);
+      setServerError('');
+      setServerLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+
+    async function loadChannel() {
+      setServerLoading(true);
+      setServerError('');
+      try {
+        const data = await fetchProfileChannel(activeProfileId, chId);
+        if (!cancelled) {
+          setServerChannel(data);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setServerChannel(null);
+          setServerError(error.message || 'Could not load this channel.');
+        }
+      } finally {
+        if (!cancelled) {
+          setServerLoading(false);
+        }
+      }
+    }
+
+    loadChannel();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeProfileId, chId, hasSupabaseAuth]);
 
   if (!ch || !s.wl.includes(chId)) {
     return (
@@ -26,7 +67,11 @@ export default function ChannelPage({ chId }) {
 
   const loadState = s.loading[chId];
   const allVideos = s.videos[chId] || [];
-  const { allowed: finalAllowed, blocked: stillBlocked, hiddenShorts } = splitVideosByAccess(allVideos, s);
+  const { allowed: localAllowed, blocked: localBlocked, hiddenShorts: localHiddenShorts } = splitVideosByAccess(allVideos, s);
+  const finalAllowed = serverChannel?.allowed || localAllowed;
+  const stillBlocked = serverChannel?.blocked || localBlocked;
+  const hiddenShorts = serverChannel?.hiddenShorts || localHiddenShorts;
+  const effectiveLoadState = hasSupabaseAuth && activeProfileId ? (serverLoading ? 'loading' : 'ok') : loadState;
   const requestedIds = s.requests.map((request) => request.vid);
 
   async function requestUnlock(video) {
@@ -72,9 +117,15 @@ export default function ChannelPage({ chId }) {
         </div>
       </div>
 
-      {loadState === 'loading' && <LoadingGrid label={`Loading ${ch.name} videos...`} />}
-      {loadState === 'err' && <ErrBox onRetry={retry} />}
-      {loadState === 'ok' && (
+      {serverError && (
+        <div className="mb-4 rounded-2xl border border-[#4b1f1f] bg-[#221010] px-4 py-3 text-sm text-red-200">
+          Couldn&apos;t load the backend-filtered channel view, so KidTube is falling back to the local channel view.
+        </div>
+      )}
+
+      {effectiveLoadState === 'loading' && <LoadingGrid label={`Loading ${ch.name} videos...`} />}
+      {effectiveLoadState === 'err' && <ErrBox onRetry={retry} />}
+      {effectiveLoadState === 'ok' && (
         <>
           {finalAllowed.length > 0 && (
             <div className="mb-6">

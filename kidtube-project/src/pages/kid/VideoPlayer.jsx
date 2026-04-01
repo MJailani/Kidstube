@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useApp } from '../../context/AppContext';
-import { getAllChannels } from '../../api';
+import { fetchProfileWatch, getAllChannels } from '../../api';
 import { isVideoAllowed, splitVideosByAccess } from '../../access';
 import { Link, navigate } from '../../router';
 import LoadingGrid from '../../components/LoadingGrid';
@@ -16,13 +16,47 @@ function uniqueVideos(videos) {
 }
 
 export default function VideoPlayer({ vidId }) {
-  const { s, logWatchForProfile } = useApp();
+  const { s, logWatchForProfile, hasSupabaseAuth, activeProfileId } = useApp();
+  const [serverWatch, setServerWatch] = useState(null);
+  const [serverWatchError, setServerWatchError] = useState('');
   const allVideos = [...Object.values(s.videos).flat(), ...(s.pinned || [])];
-  const video = allVideos.find((entry) => entry.id === vidId);
+  const localVideo = allVideos.find((entry) => entry.id === vidId);
   const allChannels = getAllChannels(s);
-  const channel = video ? allChannels.find((entry) => entry.id === video.ch) : null;
+  const video = serverWatch?.video || localVideo;
+  const channel = serverWatch?.channel || (video ? allChannels.find((entry) => entry.id === video.ch) : null);
   const logged = useRef(false);
   const allowed = isVideoAllowed(video, s);
+
+  useEffect(() => {
+    if (!hasSupabaseAuth || !activeProfileId || !vidId) {
+      setServerWatch(null);
+      setServerWatchError('');
+      return;
+    }
+
+    let cancelled = false;
+
+    async function loadWatch() {
+      try {
+        const data = await fetchProfileWatch(activeProfileId, vidId);
+        if (!cancelled) {
+          setServerWatch(data);
+          setServerWatchError('');
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setServerWatch(null);
+          setServerWatchError(error.message || 'Could not load watch recommendations.');
+        }
+      }
+    }
+
+    loadWatch();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeProfileId, hasSupabaseAuth, vidId]);
 
   useEffect(() => {
     if (video && allowed && !logged.current) {
@@ -41,11 +75,17 @@ export default function VideoPlayer({ vidId }) {
   }, [allowed, channel, logWatchForProfile, vidId, video]);
 
   const related = useMemo(() => {
+    if (serverWatch?.related) {
+      return serverWatch.related;
+    }
     if (!video) return [];
     return splitVideosByAccess((s.videos[video.ch] || []).filter((entry) => entry.id !== video.id), s).allowed.slice(0, 8);
-  }, [s, video]);
+  }, [s, serverWatch, video]);
 
   const moreToExplore = useMemo(() => {
+    if (serverWatch?.moreToExplore) {
+      return serverWatch.moreToExplore;
+    }
     if (!video) return [];
 
     const fromHistory = s.history
@@ -57,7 +97,7 @@ export default function VideoPlayer({ vidId }) {
     const fromAll = allVideos.filter((entry) => entry.id !== video.id && entry.ch !== video.ch && isVideoAllowed(entry, s));
 
     return uniqueVideos([...fromHistory, ...fromPinned, ...fromAll]).slice(0, 6);
-  }, [allVideos, s, video]);
+  }, [allVideos, s, serverWatch, video]);
 
   if (!video && Object.values(s.loading).some((value) => value === 'loading')) {
     return <div className="flex items-center justify-center min-h-[60vh]"><LoadingGrid label="Loading video..." /></div>;
@@ -113,6 +153,12 @@ export default function VideoPlayer({ vidId }) {
         <span>|</span>
         <span className="text-[#d7d7d7]">{video.title}</span>
       </div>
+
+      {serverWatchError && (
+        <div className="mb-4 rounded-2xl border border-[#4b1f1f] bg-[#221010] px-4 py-3 text-sm text-red-200">
+          Couldn&apos;t load backend-filtered watch recommendations, so KidTube is falling back to local recommendations.
+        </div>
+      )}
 
       <div className="grid xl:grid-cols-[minmax(0,1.65fr)_380px] gap-6 items-start">
         <section className="min-w-0">

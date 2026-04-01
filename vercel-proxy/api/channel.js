@@ -1,4 +1,4 @@
-const { buildProfileFeed } = require('./_profileFeed');
+const { buildProfileChannel } = require('./_profileFeed');
 
 function sendJson(res, status, body) {
   res.statusCode = status;
@@ -24,14 +24,15 @@ module.exports = async function handler(req, res) {
 
   try {
     const profileId = String(req.query.profileId || '').trim();
-    if (!profileId) {
-      return sendJson(res, 400, { error: 'Missing profileId.' });
+    const channelId = String(req.query.channelId || '').trim();
+    if (!profileId || !channelId) {
+      return sendJson(res, 400, { error: 'Missing profileId or channelId.' });
     }
 
-    const data = await buildProfileFeed(profileId);
+    const data = await buildProfileChannel(profileId, channelId);
     res.setHeader('Cache-Control', 's-maxage=120, stale-while-revalidate=300');
     return sendJson(res, 200, { data });
   } catch (error) {
-    return sendJson(res, 400, { error: error.message || 'Feed request failed' });
+    return sendJson(res, 400, { error: error.message || 'Channel request failed' });
   }
 };
