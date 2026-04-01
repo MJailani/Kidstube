@@ -1,0 +1,26 @@
+{
+  "name": "KidTube",
+  "short_name": "KidTube",
+  "description": "Safe YouTube browsing for kids with parent-managed channels, picks, and filters.",
+  "start_url": "./#/",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0f0f0f",
+  "theme_color": "#ff0000",
+  "orientation": "portrait",
+  "categories": ["education", "entertainment", "kids", "family"],
+  "icons": [
+    {
+      "src": "./icons/icon-192.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "./icons/icon-512.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

@@ -1,6 +1,7 @@
 import { useApp } from '../context/AppContext';
 import { navigate } from '../router';
 import { IcShield } from '../icons';
+import InstallPrompt from '../components/InstallPrompt';
 
 export default function KidLayout({ children }) {
   const { s } = useApp();
@@ -42,6 +43,7 @@ export default function KidLayout({ children }) {
         </div>
       </div>
       <main className="flex-1">{children}</main>
+      <InstallPrompt bottomOffset={16} />
     </div>
   );
 }
