@@ -2,12 +2,17 @@ import { useApp } from '../../context/AppContext';
 import { IcMsg, IcClock, IcOk, IcXcirc } from '../../icons';
 
 export default function PRequests() {
-  const { s, d } = useApp();
+  const { s, approveVideoRequest, denyVideoRequest, activeProfile, hasSupabaseAuth } = useApp();
 
   return (
     <div>
       <h2 className="text-white text-xl font-bold mb-1">Unlock Requests</h2>
       <p className="text-[#6b7280] text-sm mb-5">Review videos your kids want to watch.</p>
+      {hasSupabaseAuth && activeProfile && (
+        <p className="text-[#6b7280] text-xs mb-4">
+          Showing pending requests for <span className="text-white">{activeProfile.name}</span>
+        </p>
+      )}
 
       {!s.requests.length ? (
         <div className="text-center py-16 text-[#6b7280]">
@@ -35,13 +40,13 @@ export default function PRequests() {
                   <p className="text-orange-400 text-xs mt-1">Shorts stay blocked and cannot be approved.</p>
                 )}
                 <div className="flex gap-2 mt-3">
-                  <button onClick={() => d({ t: 'APPROVE', rid: request.rid })} disabled={request.short}
+                  <button onClick={() => approveVideoRequest(request.rid)} disabled={request.short}
                     className={`flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg transition-colors ${
                       request.short ? 'bg-[#374151] text-[#6b7280] cursor-not-allowed' : 'bg-green-700 hover:bg-green-600 text-white'
                     }`}>
                     <IcOk size={14} />{request.short ? 'Cannot approve' : 'Approve'}
                   </button>
-                  <button onClick={() => d({ t: 'DENY', rid: request.rid })}
+                  <button onClick={() => denyVideoRequest(request.rid)}
                     className="flex items-center gap-1.5 bg-[#374151] hover:bg-red-800 text-[#9ca3af] hover:text-white text-sm px-3 py-1.5 rounded-lg transition-colors">
                     <IcXcirc size={14} />Deny
                   </button>

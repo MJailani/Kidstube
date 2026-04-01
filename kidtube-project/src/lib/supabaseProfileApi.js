@@ -312,3 +312,86 @@ export async function deleteCustomChannel(channelId) {
 
   if (error) throw error;
 }
+
+export async function createUnlockRequest(profileId, request) {
+  requireSupabase();
+
+  const { data: existingPending, error: existingError } = await supabase
+    .from('unlock_requests')
+    .select('*')
+    .eq('profile_id', profileId)
+    .eq('video_id', request.vid)
+    .eq('status', 'pending')
+    .maybeSingle();
+
+  if (existingError) throw existingError;
+  if (existingPending) return existingPending;
+
+  const payload = {
+    profile_id: profileId,
+    video_id: request.vid,
+    title: request.title,
+    channel_name: request.chName || null,
+    thumb: request.thumb || null,
+    is_short: !!request.short,
+    status: 'pending',
+  };
+
+  const { data, error } = await supabase
+    .from('unlock_requests')
+    .insert(payload)
+    .select('*')
+    .single();
+
+  if (error) throw error;
+  return data;
+}
+
+export async function approveUnlockRequest(profileId, requestId) {
+  requireSupabase();
+
+  const { data: request, error: requestError } = await supabase
+    .from('unlock_requests')
+    .select('*')
+    .eq('profile_id', profileId)
+    .eq('id', requestId)
+    .single();
+
+  if (requestError) throw requestError;
+
+  const { error: updateError } = await supabase
+    .from('unlock_requests')
+    .update({
+      status: request.is_short ? 'denied' : 'approved',
+      resolved_at: new Date().toISOString(),
+    })
+    .eq('id', requestId);
+
+  if (updateError) throw updateError;
+
+  if (!request.is_short) {
+    const { error: approvalError } = await supabase.from('approved_videos').upsert({
+      profile_id: profileId,
+      video_id: request.video_id,
+      title: request.title,
+      channel_name: request.channel_name,
+      thumb: request.thumb,
+    }, { onConflict: 'profile_id,video_id' });
+
+    if (approvalError) throw approvalError;
+  }
+}
+
+export async function denyUnlockRequest(profileId, requestId) {
+  requireSupabase();
+  const { error } = await supabase
+    .from('unlock_requests')
+    .update({
+      status: 'denied',
+      resolved_at: new Date().toISOString(),
+    })
+    .eq('profile_id', profileId)
+    .eq('id', requestId);
+
+  if (error) throw error;
+}

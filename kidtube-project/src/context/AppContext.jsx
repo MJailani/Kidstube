@@ -3,8 +3,11 @@ import { CHANNELS, DFLT } from '../config';
 import { fetchChannelVideos } from '../api';
 import { HAS_SUPABASE_CONFIG, supabase } from '../lib/supabase';
 import {
+  approveUnlockRequest,
   createChildProfile,
+  createUnlockRequest,
   deleteCustomChannel,
+  denyUnlockRequest,
   disableProfileChannel,
   enableProfileChannel,
   ensureInitialChildProfile,
@@ -45,6 +48,12 @@ function reducer(s, a) {
         wl: a.whitelist,
         customChannels: a.customChannels || [],
       };
+    case 'SET_PROFILE_MODERATION':
+      return {
+        ...s,
+        requests: a.requests || [],
+        approved: a.approved || [],
+      };
     case 'TOGGLE_CH':  { const w = s.wl; return { ...s, wl: w.includes(a.id) ? w.filter((x) => x !== a.id) : [...w, a.id] }; }
     case 'ADD_CH': {
       const ccs = s.customChannels || [];
@@ -81,6 +90,23 @@ function reducer(s, a) {
 
 function profileStorageKey(userId) {
   return `${PROFILE_STORAGE_PREFIX}${userId}`;
+}
+
+function mapBundleToModeration(bundle) {
+  const requests = (bundle.requests || [])
+    .filter((request) => request.status === 'pending')
+    .map((request) => ({
+      rid: request.id,
+      vid: request.video_id,
+      title: request.title,
+      chName: request.channel_name || '',
+      thumb: request.thumb || '',
+      short: !!request.is_short,
+      at: request.requested_at,
+    }));
+
+  const approved = (bundle.approvals || []).map((entry) => entry.video_id);
+  return { requests, approved };
 }
 
 const Ctx = createContext(null);
@@ -240,6 +266,11 @@ export function AppProvider({ children }) {
           t: 'SET_PROFILE_CHANNELS',
           whitelist,
           customChannels,
+        });
+
+        d({
+          t: 'SET_PROFILE_MODERATION',
+          ...mapBundleToModeration(bundle),
         });
       } catch (error) {
         if (!cancelled) {
@@ -446,6 +477,65 @@ export function AppProvider({ children }) {
     });
   }
 
+  async function requestVideoUnlock(request) {
+    if (!HAS_SUPABASE_CONFIG || !activeProfileId) {
+      d({ t: 'REQ', r: request });
+      return;
+    }
+
+    const created = await createUnlockRequest(activeProfileId, request);
+    const nextRequests = s.requests.find((entry) => entry.vid === request.vid)
+      ? s.requests
+      : [{
+        rid: created.id,
+        vid: request.vid,
+        title: request.title,
+        chName: request.chName || '',
+        thumb: request.thumb || '',
+        short: !!request.short,
+        at: created.requested_at || new Date().toISOString(),
+      }, ...s.requests];
+
+    d({
+      t: 'SET_PROFILE_MODERATION',
+      requests: nextRequests,
+      approved: s.approved,
+    });
+  }
+
+  async function approveVideoRequest(requestId) {
+    if (!HAS_SUPABASE_CONFIG || !activeProfileId) {
+      d({ t: 'APPROVE', rid: requestId });
+      return;
+    }
+
+    const request = s.requests.find((entry) => entry.rid === requestId);
+    await approveUnlockRequest(activeProfileId, requestId);
+
+    d({
+      t: 'SET_PROFILE_MODERATION',
+      requests: s.requests.filter((entry) => entry.rid !== requestId),
+      approved:
+        request && !request.short && !s.approved.includes(request.vid)
+          ? [...s.approved, request.vid]
+          : s.approved,
+    });
+  }
+
+  async function denyVideoRequest(requestId) {
+    if (!HAS_SUPABASE_CONFIG || !activeProfileId) {
+      d({ t: 'DENY', rid: requestId });
+      return;
+    }
+
+    await denyUnlockRequest(activeProfileId, requestId);
+    d({
+      t: 'SET_PROFILE_MODERATION',
+      requests: s.requests.filter((entry) => entry.rid !== requestId),
+      approved: s.approved,
+    });
+  }
+
   return (
     <Ctx.Provider
       value={{
@@ -471,6 +561,9 @@ export function AppProvider({ children }) {
         toggleProfileChannel,
         addCustomProfileChannel,
         removeCustomProfileChannel,
+        requestVideoUnlock,
+        approveVideoRequest,
+        denyVideoRequest,
       }}
     >
       {children}

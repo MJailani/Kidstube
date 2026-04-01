@@ -9,7 +9,7 @@ import ErrBox from '../../components/ErrBox';
 import { IcLeft, IcLock } from '../../icons';
 
 export default function ChannelPage({ chId }) {
-  const { s, d } = useApp();
+  const { s, d, requestVideoUnlock } = useApp();
   const ch = getAllChannels(s).find((channel) => channel.id === chId);
 
   if (!ch || !s.wl.includes(chId)) {
@@ -29,16 +29,13 @@ export default function ChannelPage({ chId }) {
   const { allowed: finalAllowed, blocked: stillBlocked, hiddenShorts } = splitVideosByAccess(allVideos, s);
   const requestedIds = s.requests.map((request) => request.vid);
 
-  function requestUnlock(video) {
-    d({
-      t: 'REQ',
-      r: {
-        vid: video.id,
-        title: video.title,
-        chName: ch.name,
-        thumb: video.thumb,
-        short: !!video.short,
-      },
+  async function requestUnlock(video) {
+    await requestVideoUnlock({
+      vid: video.id,
+      title: video.title,
+      chName: ch.name,
+      thumb: video.thumb,
+      short: !!video.short,
     });
   }
 
