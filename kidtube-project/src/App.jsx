@@ -1,59 +1,25 @@
-import React from 'react';
-import { Routes, Route, Navigate } from 'react-router-dom';
-import { useApp } from './context/AppContext.jsx';
-
-// Kid Mode
-import KidLayout from './components/kid/KidLayout.jsx';
-import KidHome from './components/kid/KidHome.jsx';
-import ChannelPage from './components/kid/ChannelPage.jsx';
-import VideoPlayer from './components/kid/VideoPlayer.jsx';
-
-// Parent Mode
-import PinEntry from './components/parent/PinEntry.jsx';
-import ParentLayout from './components/parent/ParentLayout.jsx';
-import Dashboard from './components/parent/Dashboard.jsx';
-import ChannelManager from './components/parent/ChannelManager.jsx';
-import FilterSettings from './components/parent/FilterSettings.jsx';
-import WatchHistory from './components/parent/WatchHistory.jsx';
-import PendingRequests from './components/parent/PendingRequests.jsx';
-
-// Guard: redirect to PIN if parent isn't authenticated
-function ParentGuard({ children }) {
-  const { state } = useApp();
-  if (!state.isParentAuthed) return <Navigate to="/parent" replace />;
-  return children;
-}
+import { useEffect } from 'react';
+import { useApp } from './context/AppContext';
+import { useHashRouter, navigate } from './router';
+import KidLayout from './layouts/KidLayout';
+import ParentLayout from './layouts/ParentLayout';
+import PinEntry from './layouts/PinEntry';
+import KidHome from './pages/kid/KidHome';
+import ChannelPage from './pages/kid/ChannelPage';
+import VideoPlayer from './pages/kid/VideoPlayer';
 
 export default function App() {
-  return (
-    <Routes>
-      {/* ── Kid Routes ───────────────────────────────── */}
-      <Route element={<KidLayout />}>
-        <Route index element={<KidHome />} />
-        <Route path="channel/:channelId" element={<ChannelPage />} />
-        <Route path="watch/:videoId" element={<VideoPlayer />} />
-      </Route>
+  const { s } = useApp();
+  const path = useHashRouter();
 
-      {/* ── Parent Routes ────────────────────────────── */}
-      <Route path="/parent" element={<PinEntry />} />
-      <Route
-        path="/parent/*"
-        element={
-          <ParentGuard>
-            <ParentLayout />
-          </ParentGuard>
-        }
-      >
-        <Route index element={<Navigate to="/parent/dashboard" replace />} />
-        <Route path="dashboard" element={<Dashboard />} />
-        <Route path="channels" element={<ChannelManager />} />
-        <Route path="filters" element={<FilterSettings />} />
-        <Route path="history" element={<WatchHistory />} />
-        <Route path="requests" element={<PendingRequests />} />
-      </Route>
+  useEffect(() => {
+    if (path === '/parent' && s.authed) navigate('/parent/dashboard');
+  }, [path, s.authed]);
 
-      {/* Fallback */}
-      <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
-  );
+  if (path === '/' || path === '') return <KidLayout><KidHome /></KidLayout>;
+  if (path.startsWith('/channel/')) return <KidLayout><ChannelPage chId={path.split('/')[2]} /></KidLayout>;
+  if (path.startsWith('/watch/')) return <KidLayout><VideoPlayer vidId={path.split('/')[2]} /></KidLayout>;
+  if (path === '/parent') return s.authed ? null : <PinEntry />;
+  if (path.startsWith('/parent/')) return s.authed ? <ParentLayout sec={path.split('/')[2] || 'dashboard'} /> : <PinEntry />;
+  return <KidLayout><KidHome /></KidLayout>;
 }
